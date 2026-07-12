@@ -1,0 +1,19 @@
+# Xcode 和 XcodeGen 自动生成的内容
+DerivedData/
+build/
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+*.xcuserstate
+
+# Apple 签名材料：绝不上传
+*.mobileprovision
+*.p12
+*.cer
+
+# 构建产物：不作为源码提交
+*.ipa
+*.xcarchive
+
+# 个人音乐：绝不上传
+*.mp3

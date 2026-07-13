@@ -173,6 +173,131 @@ struct SongTests {
     }
 
     @Test
+    func appliesBatchEditToOnlyTheSelectedSongsAndCanRestoreThem() {
+        let first = Self.makeSong(title: "First")
+        first.categoryName = "旧分类"
+        let firstArtwork = Self.makeArtworkData()
+        first.artworkData = firstArtwork
+        let second = Self.makeSong(title: "Second")
+        let untouched = Self.makeSong(title: "Untouched")
+        untouched.categoryName = "保留分类"
+        let untouchedArtwork = Self.makeArtworkData()
+        untouched.artworkData = untouchedArtwork
+        let replacementArtwork = Self.makeArtworkData()
+        let request = BatchSongEditRequest(
+            categoryChange: .move(
+                categoryName: "  日语音乐  ",
+                subcategoryName: "  动画歌曲  "
+            ),
+            artworkChange: .replace(replacementArtwork)
+        )
+
+        let snapshot: BatchSongEditSnapshot
+
+        do {
+            snapshot = try request.apply(
+                to: [first, second],
+                existingCategoryPaths: Song.categoryPaths(in: [untouched])
+            )
+        } catch {
+            Issue.record("Expected the batch edit to apply, got \(error).")
+            return
+        }
+
+        #expect(first.categoryName == "日语音乐")
+        #expect(first.subcategoryName == "动画歌曲")
+        #expect(first.artworkData == replacementArtwork)
+        #expect(second.categoryName == "日语音乐")
+        #expect(second.subcategoryName == "动画歌曲")
+        #expect(second.artworkData == replacementArtwork)
+        #expect(untouched.categoryName == "保留分类")
+        #expect(untouched.artworkData == untouchedArtwork)
+
+        snapshot.restore()
+
+        #expect(first.categoryName == "旧分类")
+        #expect(first.subcategoryName == nil)
+        #expect(first.artworkData == firstArtwork)
+        #expect(second.categoryName == nil)
+        #expect(second.subcategoryName == nil)
+        #expect(second.artworkData == nil)
+    }
+
+    @Test
+    func clearsSelectedCategoryAndArtworkWithoutChangingUnrequestedFields() {
+        let song = Self.makeSong(title: "Selected")
+        song.categoryName = "日语音乐"
+        song.subcategoryName = "动画歌曲"
+        song.artworkData = Self.makeArtworkData()
+        let request = BatchSongEditRequest(
+            categoryChange: .move(categoryName: nil, subcategoryName: nil),
+            artworkChange: .remove
+        )
+
+        do {
+            _ = try request.apply(
+                to: [song],
+                existingCategoryPaths: Song.categoryPaths(in: [song])
+            )
+        } catch {
+            Issue.record("Expected the batch edit to apply, got \(error).")
+            return
+        }
+
+        #expect(song.categoryName == nil)
+        #expect(song.subcategoryName == nil)
+        #expect(song.artworkData == nil)
+    }
+
+    @Test
+    func rejectsInvalidBatchArtworkWithoutMutatingAnySelectedSong() {
+        let song = Self.makeSong(title: "Selected")
+        song.categoryName = "原分类"
+        let originalArtwork = Self.makeArtworkData()
+        song.artworkData = originalArtwork
+        let request = BatchSongEditRequest(
+            categoryChange: .move(categoryName: "新分类", subcategoryName: nil),
+            artworkChange: .replace(Data("not-an-image".utf8))
+        )
+
+        do {
+            _ = try request.apply(
+                to: [song],
+                existingCategoryPaths: Song.categoryPaths(in: [song])
+            )
+            Issue.record("Expected an invalid artwork error.")
+        } catch BatchSongEditError.invalidArtwork {
+            // Expected outcome.
+        } catch {
+            Issue.record("Expected invalidArtwork, got \(error).")
+        }
+
+        #expect(song.categoryName == "原分类")
+        #expect(song.subcategoryName == nil)
+        #expect(song.artworkData == originalArtwork)
+    }
+
+    @Test
+    func identifiesBatchEditsThatRequireNowPlayingArtworkRefresh() {
+        let unchangedRequest = BatchSongEditRequest(
+            categoryChange: .move(categoryName: "日语音乐", subcategoryName: nil),
+            artworkChange: .unchanged
+        )
+        let replacementRequest = BatchSongEditRequest(
+            categoryChange: .unchanged,
+            artworkChange: .replace(Self.makeArtworkData())
+        )
+        let removalRequest = BatchSongEditRequest(
+            categoryChange: .unchanged,
+            artworkChange: .remove
+        )
+
+        #expect(!unchangedRequest.changesArtwork)
+        #expect(replacementRequest.changesArtwork)
+        #expect(removalRequest.changesArtwork)
+    }
+
+    @Test
     func rejectsFilesThatAreNotMP3() async {
         let importer = MP3ImportService()
         let textFileURL = URL(fileURLWithPath: "/not-a-song.txt")

@@ -41,4 +41,31 @@ struct SongTests {
             Issue.record("Expected unsupportedFileType, got \(error).")
         }
     }
+
+    @Test
+    func removesOnlyTheStoredMP3Copy() throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileURL = directory.appendingPathComponent("stored-song.mp3")
+
+        defer {
+            try? fileManager.removeItem(at: directory)
+        }
+
+        try fileManager.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        try Data([0x00]).write(to: fileURL)
+
+        let importer = MP3ImportService(
+            fileManager: fileManager,
+            musicDirectoryURL: directory
+        )
+
+        try importer.removeStoredMP3(named: "stored-song.mp3")
+
+        #expect(!fileManager.fileExists(atPath: fileURL.path))
+    }
 }

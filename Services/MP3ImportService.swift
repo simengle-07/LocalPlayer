@@ -24,9 +24,14 @@ enum MP3ImportError: LocalizedError {
 
 struct MP3ImportService {
     private let fileManager: FileManager
+    private let musicDirectoryURL: URL?
 
-    init(fileManager: FileManager = .default) {
+    init(
+        fileManager: FileManager = .default,
+        musicDirectoryURL: URL? = nil
+    ) {
         self.fileManager = fileManager
+        self.musicDirectoryURL = musicDirectoryURL
     }
 
     func importMP3(
@@ -79,20 +84,25 @@ struct MP3ImportService {
         )
     }
 
-    func removeStoredMP3(named storageFileName: String) {
+    func removeStoredMP3(named storageFileName: String) throws {
         guard storageFileName == URL(fileURLWithPath: storageFileName).lastPathComponent,
-              let directory = try? musicDirectory()
+              storageFileName.pathExtension.lowercased() == "mp3"
         else {
             return
         }
 
-        try? fileManager.removeItem(
-            at: directory.appendingPathComponent(storageFileName)
-        )
+        let directory = try musicDirectory()
+        let fileURL = directory.appendingPathComponent(storageFileName)
+
+        guard fileManager.fileExists(atPath: fileURL.path) else {
+            return
+        }
+
+        try fileManager.removeItem(at: fileURL)
     }
 
     private func musicDirectory() throws -> URL {
-        let directory = URL.documentsDirectory
+        let directory = musicDirectoryURL ?? URL.documentsDirectory
             .appendingPathComponent("Music", isDirectory: true)
 
         try fileManager.createDirectory(

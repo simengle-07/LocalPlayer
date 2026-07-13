@@ -2,11 +2,12 @@ import Foundation
 import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
+import UIKit
 
 struct LibraryView: View {
     @Environment(\.modelContext) private var modelContext
 
-    @Query(sort: \Song.importedAt, order: .reverse)
+    @Query(sort: \Song.title, order: .forward)
     private var songs: [Song]
 
     @State private var isShowingImporter = false
@@ -25,29 +26,30 @@ struct LibraryView: View {
                         description: Text("从“文件”中导入 MP3，建立你的本地音乐资料库。")
                     )
                 } else {
-                    List(songs, id: \.id) { song in
-                        HStack(spacing: 12) {
-                            Image(systemName: "music.note")
-                                .foregroundStyle(.tint)
-                                .frame(width: 24)
+                    List {
+                        ForEach(songs, id: \.id) { song in
+                            HStack(spacing: 12) {
+                                ArtworkThumbnail(artworkData: song.artworkData)
 
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(song.title)
-                                    .lineLimit(1)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(song.title)
+                                        .lineLimit(1)
 
-                                Text(song.artist)
-                                    .font(.subheadline)
+                                    Text(song.artist)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+
+                                Spacer()
+
+                                Text(formattedDuration(song.durationSeconds))
+                                    .font(.caption.monospacedDigit())
                                     .foregroundStyle(.secondary)
-                                    .lineLimit(1)
                             }
-
-                            Spacer()
-
-                            Text(formattedDuration(song.durationSeconds))
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
+                            .accessibilityElement(children: .combine)
                         }
-                        .accessibilityElement(children: .combine)
+                        .onDelete(perform: deleteSongs)
                     }
                 }
             }
@@ -80,7 +82,7 @@ struct LibraryView: View {
             }
         }
         .alert(
-            "导入未完全完成",
+            "操作未完全完成",
             isPresented: Binding(
                 get: { importErrorMessage != nil },
                 set: { isPresented in
@@ -119,7 +121,7 @@ struct LibraryView: View {
                     try modelContext.save()
                 } catch {
                     modelContext.delete(song)
-                    importer.removeStoredMP3(named: song.storageFileName)
+                    try? importer.removeStoredMP3(named: song.storageFileName)
                     throw error
                 }
 
@@ -134,8 +136,60 @@ struct LibraryView: View {
         }
     }
 
+    private func deleteSongs(at offsets: IndexSet) {
+        let songsToDelete = offsets.map { songs[$0] }
+
+        for song in songsToDelete {
+            modelContext.delete(song)
+        }
+
+        do {
+            try modelContext.save()
+        } catch {
+            importErrorMessage = "删除资料库记录失败：\(error.localizedDescription)"
+            return
+        }
+
+        var failedFiles = [String]()
+
+        for song in songsToDelete {
+            do {
+                try importer.removeStoredMP3(named: song.storageFileName)
+            } catch {
+                failedFiles.append(song.title)
+            }
+        }
+
+        if !failedFiles.isEmpty {
+            importErrorMessage = "已从资料库移除，但未能清理文件：\(failedFiles.joined(separator: "、"))"
+        }
+    }
+
     private func formattedDuration(_ duration: Double) -> String {
         let totalSeconds = Int(duration.rounded())
         return String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
+    }
+}
+
+private struct ArtworkThumbnail: View {
+    let artworkData: Data?
+
+    var body: some View {
+        Group {
+            if let artworkData,
+               let image = UIImage(data: artworkData) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Image(systemName: "music.note")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 44, height: 44)
+        .background(.quaternary)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .accessibilityHidden(true)
     }
 }

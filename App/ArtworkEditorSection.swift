@@ -8,6 +8,8 @@ struct ArtworkEditorSection: View {
     @Binding var didChangeArtwork: Bool
     @Binding var errorMessage: String?
     @Binding var isLoadingArtwork: Bool
+    var allowsRemoval = true
+    var footerText = "封面更改会在保存歌曲时应用。"
 
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var isShowingFileImporter = false
@@ -37,13 +39,15 @@ struct ArtworkEditorSection: View {
                 isShowingFileImporter = true
             }
 
-            Button("移除封面", systemImage: "trash", role: .destructive) {
-                artworkData = nil
-                didChangeArtwork = true
+            if allowsRemoval {
+                Button("移除封面", systemImage: "trash", role: .destructive) {
+                    artworkData = nil
+                    didChangeArtwork = true
+                }
+                .disabled(artworkData == nil)
             }
-            .disabled(artworkData == nil)
 
-            Text("封面更改会在保存歌曲时应用。")
+            Text(footerText)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }

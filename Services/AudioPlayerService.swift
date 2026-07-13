@@ -4,7 +4,7 @@ import Foundation
 import MediaPlayer
 import UIKit
 
-enum PlaybackMode: String, CaseIterable, Identifiable {
+enum PlaybackMode: String, CaseIterable, Identifiable, Equatable {
     case sequential
     case shuffle
     case repeatAll

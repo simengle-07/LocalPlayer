@@ -86,6 +86,8 @@ struct NowPlayingView: View {
                                 .accessibilityLabel("下一首")
                             }
 
+                            playbackModeMenu
+
                             HStack(spacing: 12) {
                                 Image(systemName: "speaker.fill")
                                     .foregroundStyle(.secondary)
@@ -153,6 +155,32 @@ struct NowPlayingView: View {
             get: { displayedPlaybackTime },
             set: { seekTime = $0 }
         )
+    }
+
+    private var playbackModeMenu: some View {
+        Menu {
+            ForEach(PlaybackMode.allCases) { mode in
+                Button {
+                    audioPlayer.setPlaybackMode(mode)
+                } label: {
+                    Label(
+                        mode.displayName,
+                        systemImage: audioPlayer.playbackMode == mode
+                            ? "checkmark"
+                            : mode.systemImage
+                    )
+                }
+            }
+        } label: {
+            Label(
+                audioPlayer.playbackMode.displayName,
+                systemImage: audioPlayer.playbackMode.systemImage
+            )
+            .font(.subheadline.weight(.medium))
+        }
+        .buttonStyle(.bordered)
+        .accessibilityLabel("播放模式")
+        .accessibilityValue(audioPlayer.playbackMode.displayName)
     }
 
     private var volume: Binding<Double> {

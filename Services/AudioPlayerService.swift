@@ -232,7 +232,7 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
         if let artworkData = song.artworkData,
            let artworkImage = UIImage(data: artworkData) {
             nowPlayingInfo[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(
-                bounds: artworkImage.size
+                boundsSize: artworkImage.size
             ) { _ in
                 artworkImage
             }

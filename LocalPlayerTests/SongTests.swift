@@ -445,6 +445,117 @@ struct SongTests {
     }
 
     @Test
+    func stopsAtTheEndInSequentialMode() {
+        let first = Self.makeSong(title: "First")
+        let second = Self.makeSong(title: "Second")
+
+        #expect(
+            AudioPlayerService.nextSong(
+                in: [first, second],
+                relativeTo: first.id,
+                mode: .sequential,
+                reason: .manual
+            )?.id == second.id
+        )
+        #expect(
+            AudioPlayerService.nextSong(
+                in: [first, second],
+                relativeTo: second.id,
+                mode: .sequential,
+                reason: .automatic
+            ) == nil
+        )
+    }
+
+    @Test
+    func wrapsToTheFirstSongInRepeatAllMode() {
+        let first = Self.makeSong(title: "First")
+        let second = Self.makeSong(title: "Second")
+
+        #expect(
+            AudioPlayerService.nextSong(
+                in: [first, second],
+                relativeTo: second.id,
+                mode: .repeatAll,
+                reason: .automatic
+            )?.id == first.id
+        )
+    }
+
+    @Test
+    func repeatsOnlyAfterAutomaticCompletionInRepeatOneMode() {
+        let first = Self.makeSong(title: "First")
+        let second = Self.makeSong(title: "Second")
+
+        #expect(
+            AudioPlayerService.nextSong(
+                in: [first, second],
+                relativeTo: first.id,
+                mode: .repeatOne,
+                reason: .automatic
+            )?.id == first.id
+        )
+        #expect(
+            AudioPlayerService.nextSong(
+                in: [first, second],
+                relativeTo: first.id,
+                mode: .repeatOne,
+                reason: .manual
+            )?.id == second.id
+        )
+    }
+
+    @Test
+    func choosesAnotherSongInShuffleModeAndStopsForOneSong() {
+        let first = Self.makeSong(title: "First")
+        let second = Self.makeSong(title: "Second")
+        let third = Self.makeSong(title: "Third")
+
+        let shuffledSong = AudioPlayerService.nextSong(
+            in: [first, second, third],
+            relativeTo: first.id,
+            mode: .shuffle,
+            reason: .manual,
+            randomIndex: { _ in 1 }
+        )
+
+        #expect(shuffledSong?.id == third.id)
+        #expect(shuffledSong?.id != first.id)
+        #expect(
+            AudioPlayerService.nextSong(
+                in: [first],
+                relativeTo: first.id,
+                mode: .shuffle,
+                reason: .automatic,
+                randomIndex: { _ in 0 }
+            ) == nil
+        )
+    }
+
+    @Test
+    func persistsTheSelectedPlaybackMode() async {
+        let suiteName = "LocalPlayerTests.PlaybackMode.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            Issue.record("Expected an isolated UserDefaults suite.")
+            return
+        }
+
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        await MainActor.run {
+            let player = AudioPlayerService(userDefaults: defaults)
+            #expect(player.playbackMode == .sequential)
+
+            player.setPlaybackMode(.repeatAll)
+
+            let restoredPlayer = AudioPlayerService(userDefaults: defaults)
+            #expect(restoredPlayer.playbackMode == .repeatAll)
+        }
+    }
+
+    @Test
     func reportsTrackCommandAvailabilityFromThePlaybackQueue() async {
         await MainActor.run {
             let first = Self.makeSong(title: "First")

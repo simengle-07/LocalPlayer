@@ -4,6 +4,46 @@ import Foundation
 import MediaPlayer
 import UIKit
 
+enum PlaybackMode: String, CaseIterable, Identifiable {
+    case sequential
+    case shuffle
+    case repeatAll
+    case repeatOne
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .sequential:
+            return "顺序播放"
+        case .shuffle:
+            return "随机播放"
+        case .repeatAll:
+            return "列表循环"
+        case .repeatOne:
+            return "单曲循环"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .sequential:
+            return "arrow.right"
+        case .shuffle:
+            return "shuffle"
+        case .repeatAll:
+            return "repeat"
+        case .repeatOne:
+            return "repeat.1"
+        }
+    }
+}
+
+enum PlaybackAdvanceReason: Equatable {
+    case automatic
+    case manual
+}
+
 enum AudioPlayerError: LocalizedError {
     case invalidStoredFileName
     case missingStoredFile
@@ -28,25 +68,40 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
     @Published private(set) var currentTime: TimeInterval = 0
     @Published private(set) var duration: TimeInterval = 0
     @Published private(set) var volume: Float = 1
+    @Published private(set) var playbackMode: PlaybackMode
 
     private let fileManager: FileManager
     private let musicDirectoryURL: URL?
+    private let userDefaults: UserDefaults
     private var audioPlayer: AVAudioPlayer?
     private var progressTimer: Timer?
     private var nowPlayingSong: Song?
     private var playbackQueue = [Song]()
     private var remoteCommandsConfigured = false
 
+    private static let playbackModeDefaultsKey = "LocalPlayer.playbackMode"
+
     init(
         fileManager: FileManager = .default,
-        musicDirectoryURL: URL? = nil
+        musicDirectoryURL: URL? = nil,
+        userDefaults: UserDefaults = .standard
     ) {
         self.fileManager = fileManager
         self.musicDirectoryURL = musicDirectoryURL
+        self.userDefaults = userDefaults
+        playbackMode = PlaybackMode(
+            rawValue: userDefaults.string(forKey: Self.playbackModeDefaultsKey) ?? ""
+        ) ?? .sequential
     }
 
     func setPlaybackQueue(_ songs: [Song]) {
         playbackQueue = songs
+        updateRemoteTrackCommandAvailability()
+    }
+
+    func setPlaybackMode(_ mode: PlaybackMode) {
+        playbackMode = mode
+        userDefaults.set(mode.rawValue, forKey: Self.playbackModeDefaultsKey)
         updateRemoteTrackCommandAvailability()
     }
 
@@ -137,19 +192,79 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
         return songs[targetIndex]
     }
 
+    static func nextSong(
+        in songs: [Song],
+        relativeTo currentSongID: UUID?,
+        mode: PlaybackMode,
+        reason: PlaybackAdvanceReason,
+        randomIndex: (Int) -> Int = { upperBound in
+            Int.random(in: 0..<upperBound)
+        }
+    ) -> Song? {
+        guard let currentSongID,
+              let currentIndex = songs.firstIndex(where: { $0.id == currentSongID }) else {
+            return nil
+        }
+
+        switch mode {
+        case .sequential:
+            return adjacentSong(
+                in: songs,
+                relativeTo: currentSongID,
+                offset: 1
+            )
+        case .repeatAll:
+            guard !songs.isEmpty else {
+                return nil
+            }
+
+            return songs[(currentIndex + 1) % songs.count]
+        case .repeatOne:
+            if reason == .automatic {
+                return songs[currentIndex]
+            }
+
+            return adjacentSong(
+                in: songs,
+                relativeTo: currentSongID,
+                offset: 1
+            )
+        case .shuffle:
+            let candidates = songs.filter { $0.id != currentSongID }
+
+            guard !candidates.isEmpty else {
+                return nil
+            }
+
+            let requestedIndex = randomIndex(candidates.count)
+            let resolvedIndex = min(
+                max(requestedIndex, 0),
+                candidates.count - 1
+            )
+
+            return candidates[resolvedIndex]
+        }
+    }
+
     static func songForAutomaticContinuation(
         in songs: [Song],
         after currentSongID: UUID?,
-        finishedSuccessfully: Bool
+        finishedSuccessfully: Bool,
+        mode: PlaybackMode = .sequential,
+        randomIndex: (Int) -> Int = { upperBound in
+            Int.random(in: 0..<upperBound)
+        }
     ) -> Song? {
         guard finishedSuccessfully else {
             return nil
         }
 
-        return adjacentSong(
+        return nextSong(
             in: songs,
             relativeTo: currentSongID,
-            offset: 1
+            mode: mode,
+            reason: .automatic,
+            randomIndex: randomIndex
         )
     }
 

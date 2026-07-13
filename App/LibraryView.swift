@@ -321,16 +321,30 @@ struct LibraryView: View {
         }
         .confirmationDialog(
             "确认批量编辑",
-            item: $pendingBatchSongEdit,
+            isPresented: Binding(
+                get: { pendingBatchSongEdit != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        pendingBatchSongEdit = nil
+                    }
+                }
+            ),
             titleVisibility: .visible
-        ) { pendingEdit in
-            Button("应用到 \(pendingEdit.songIDs.count) 首歌曲") {
-                applyBatchEdit(pendingEdit)
+        ) {
+            if let pendingEdit = pendingBatchSongEdit {
+                Button("应用到 \(pendingEdit.songIDs.count) 首歌曲") {
+                    applyBatchEdit(pendingEdit)
+                }
             }
 
-            Button("取消", role: .cancel) {}
-        } message: { pendingEdit in
-            Text(batchEditSummary(for: pendingEdit))
+            Button("取消", role: .cancel) {
+                pendingBatchSongEdit = nil
+            }
+        } message: {
+            Text(
+                pendingBatchSongEdit.map { batchEditSummary(for: $0) }
+                    ?? ""
+            )
         }
     }
 

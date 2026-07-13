@@ -59,6 +59,72 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
             return
         }
 
+        try startPlayback(of: song)
+    }
+
+    func play(_ song: Song) throws {
+        if currentSongID == song.id, let audioPlayer {
+            guard !audioPlayer.isPlaying else {
+                return
+            }
+
+            guard audioPlayer.play() else {
+                throw AudioPlayerError.cannotStartPlayback
+            }
+
+            isPlaying = true
+            startProgressUpdates()
+            return
+        }
+
+        try startPlayback(of: song)
+    }
+
+    func playPrevious(in songs: [Song]) throws {
+        guard let previousSong = Self.adjacentSong(
+            in: songs,
+            relativeTo: currentSongID,
+            offset: -1
+        ) else {
+            return
+        }
+
+        try play(previousSong)
+    }
+
+    func playNext(in songs: [Song]) throws {
+        guard let nextSong = Self.adjacentSong(
+            in: songs,
+            relativeTo: currentSongID,
+            offset: 1
+        ) else {
+            return
+        }
+
+        try play(nextSong)
+    }
+
+    static func adjacentSong(
+        in songs: [Song],
+        relativeTo currentSongID: UUID?,
+        offset: Int
+    ) -> Song? {
+        guard offset == -1 || offset == 1,
+              let currentSongID,
+              let currentIndex = songs.firstIndex(where: { $0.id == currentSongID }) else {
+            return nil
+        }
+
+        let targetIndex = currentIndex + offset
+
+        guard songs.indices.contains(targetIndex) else {
+            return nil
+        }
+
+        return songs[targetIndex]
+    }
+
+    private func startPlayback(of song: Song) throws {
         let fileURL = try storedFileURL(for: song)
 
         do {

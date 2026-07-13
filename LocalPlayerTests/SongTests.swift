@@ -108,4 +108,47 @@ struct SongTests {
             #expect(player.volume == 0)
         }
     }
+
+    @Test
+    func findsOnlySongsThatExistNextToTheCurrentSong() async {
+        await MainActor.run {
+            let first = Self.makeSong(title: "First")
+            let second = Self.makeSong(title: "Second")
+            let songs = [first, second]
+
+            #expect(
+                AudioPlayerService.adjacentSong(
+                    in: songs,
+                    relativeTo: first.id,
+                    offset: 1
+                )?.id == second.id
+            )
+            #expect(
+                AudioPlayerService.adjacentSong(
+                    in: songs,
+                    relativeTo: second.id,
+                    offset: 1
+                ) == nil
+            )
+            #expect(
+                AudioPlayerService.adjacentSong(
+                    in: songs,
+                    relativeTo: first.id,
+                    offset: 2
+                ) == nil
+            )
+        }
+    }
+
+    private static func makeSong(title: String) -> Song {
+        Song(
+            contentHash: UUID().uuidString,
+            storageFileName: "test.mp3",
+            title: title,
+            artist: "Test Artist",
+            durationSeconds: 1,
+            artworkData: nil,
+            importedAt: .now
+        )
+    }
 }

@@ -178,7 +178,7 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
         )
     }
 
-    static func adjacentSong(
+    nonisolated static func adjacentSong(
         in songs: [Song],
         relativeTo currentSongID: UUID?,
         offset: Int
@@ -198,7 +198,7 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
         return songs[targetIndex]
     }
 
-    static func nextSong(
+    nonisolated static func nextSong(
         in songs: [Song],
         relativeTo currentSongID: UUID?,
         mode: PlaybackMode,
@@ -252,7 +252,7 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
         }
     }
 
-    static func songForAutomaticContinuation(
+    nonisolated static func songForAutomaticContinuation(
         in songs: [Song],
         after currentSongID: UUID?,
         finishedSuccessfully: Bool,
@@ -274,7 +274,7 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
         )
     }
 
-    static func trackCommandAvailability(
+    nonisolated static func trackCommandAvailability(
         in songs: [Song],
         relativeTo currentSongID: UUID?,
         mode: PlaybackMode = .sequential
@@ -293,7 +293,7 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
         )
     }
 
-    static func hasNextSong(
+    nonisolated static func hasNextSong(
         in songs: [Song],
         relativeTo currentSongID: UUID?,
         mode: PlaybackMode

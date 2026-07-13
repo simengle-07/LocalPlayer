@@ -68,4 +68,31 @@ struct SongTests {
 
         #expect(!fileManager.fileExists(atPath: fileURL.path))
     }
+
+    @Test
+    func rejectsPlaybackWhenStoredFileIsMissing() async {
+        await MainActor.run {
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            let player = AudioPlayerService(musicDirectoryURL: directory)
+            let song = Song(
+                contentHash: "missing-song",
+                storageFileName: "missing-song.mp3",
+                title: "Missing Song",
+                artist: "Test Artist",
+                durationSeconds: 1,
+                artworkData: nil,
+                importedAt: .now
+            )
+
+            do {
+                try player.togglePlayback(of: song)
+                Issue.record("Expected playback to reject a missing MP3 file.")
+            } catch AudioPlayerError.missingStoredFile {
+                // Expected outcome.
+            } catch {
+                Issue.record("Expected missingStoredFile, got \(error).")
+            }
+        }
+    }
 }

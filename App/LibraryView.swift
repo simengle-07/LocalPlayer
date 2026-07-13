@@ -6,13 +6,14 @@ import UIKit
 
 struct LibraryView: View {
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var audioPlayer: AudioPlayerService
 
     @Query(sort: \Song.title, order: .forward)
     private var songs: [Song]
 
     @State private var isShowingImporter = false
     @State private var isImporting = false
-    @State private var importErrorMessage: String?
+    @State private var operationErrorMessage: String?
 
     private let importer = MP3ImportService()
 
@@ -28,26 +29,47 @@ struct LibraryView: View {
                 } else {
                     List {
                         ForEach(songs, id: \.id) { song in
-                            HStack(spacing: 12) {
-                                ArtworkThumbnail(artworkData: song.artworkData)
+                            Button {
+                                togglePlayback(of: song)
+                            } label: {
+                                HStack(spacing: 12) {
+                                    ArtworkThumbnail(artworkData: song.artworkData)
 
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(song.title)
-                                        .lineLimit(1)
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(song.title)
+                                            .lineLimit(1)
 
-                                    Text(song.artist)
-                                        .font(.subheadline)
+                                        Text(song.artist)
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
+
+                                    Spacer()
+
+                                    Text(formattedDuration(song.durationSeconds))
+                                        .font(.caption.monospacedDigit())
                                         .foregroundStyle(.secondary)
-                                        .lineLimit(1)
+
+                                    let isCurrentSong = audioPlayer.currentSongID == song.id
+
+                                    Image(
+                                        systemName: isCurrentSong && audioPlayer.isPlaying
+                                            ? "speaker.wave.2.fill"
+                                            : "play.fill"
+                                    )
+                                    .foregroundStyle(
+                                        isCurrentSong ? Color.accentColor : Color.secondary
+                                    )
                                 }
-
-                                Spacer()
-
-                                Text(formattedDuration(song.durationSeconds))
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
                             }
+                            .buttonStyle(.plain)
                             .accessibilityElement(children: .combine)
+                            .accessibilityHint(
+                                audioPlayer.currentSongID == song.id && audioPlayer.isPlaying
+                                    ? "暂停播放"
+                                    : "播放歌曲"
+                            )
                         }
                         .onDelete(perform: deleteSongs)
                     }
@@ -78,25 +100,25 @@ struct LibraryView: View {
                     await importFiles(urls)
                 }
             case .failure(let error):
-                importErrorMessage = "无法打开文件选择器：\(error.localizedDescription)"
+                operationErrorMessage = "无法打开文件选择器：\(error.localizedDescription)"
             }
         }
         .alert(
             "操作未完全完成",
             isPresented: Binding(
-                get: { importErrorMessage != nil },
+                get: { operationErrorMessage != nil },
                 set: { isPresented in
                     if !isPresented {
-                        importErrorMessage = nil
+                        operationErrorMessage = nil
                     }
                 }
             )
         ) {
             Button("好", role: .cancel) {
-                importErrorMessage = nil
+                operationErrorMessage = nil
             }
         } message: {
-            Text(importErrorMessage ?? "")
+            Text(operationErrorMessage ?? "")
         }
     }
 
@@ -132,12 +154,16 @@ struct LibraryView: View {
         }
 
         if !failures.isEmpty {
-            importErrorMessage = failures.joined(separator: "\n")
+            operationErrorMessage = failures.joined(separator: "\n")
         }
     }
 
     private func deleteSongs(at offsets: IndexSet) {
         let songsToDelete = offsets.map { songs[$0] }
+
+        if songsToDelete.contains(where: { $0.id == audioPlayer.currentSongID }) {
+            audioPlayer.stopPlayback()
+        }
 
         for song in songsToDelete {
             modelContext.delete(song)
@@ -146,7 +172,7 @@ struct LibraryView: View {
         do {
             try modelContext.save()
         } catch {
-            importErrorMessage = "删除资料库记录失败：\(error.localizedDescription)"
+            operationErrorMessage = "删除资料库记录失败：\(error.localizedDescription)"
             return
         }
 
@@ -161,7 +187,15 @@ struct LibraryView: View {
         }
 
         if !failedFiles.isEmpty {
-            importErrorMessage = "已从资料库移除，但未能清理文件：\(failedFiles.joined(separator: "、"))"
+            operationErrorMessage = "已从资料库移除，但未能清理文件：\(failedFiles.joined(separator: "、"))"
+        }
+    }
+
+    private func togglePlayback(of song: Song) {
+        do {
+            try audioPlayer.togglePlayback(of: song)
+        } catch {
+            operationErrorMessage = "无法播放 \(song.title)：\(error.localizedDescription)"
         }
     }
 

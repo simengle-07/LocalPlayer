@@ -224,6 +224,10 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
         audioPlayer?.volume = clampedVolume
     }
 
+    func refreshNowPlayingInfo() {
+        publishNowPlayingInfo()
+    }
+
     func stopPlayback() {
         audioPlayer?.stop()
         audioPlayer = nil

@@ -24,9 +24,16 @@ private enum LibraryCategoryFilter: Hashable {
     }
 }
 
+private struct PendingBatchSongEdit: Identifiable {
+    let id = UUID()
+    let songIDs: Set<UUID>
+    let request: BatchSongEditRequest
+}
+
 struct LibraryView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var audioPlayer: AudioPlayerService
+    @Environment(\.editMode) private var editMode
 
     @Query(sort: \Song.title, order: .forward)
     private var songs: [Song]
@@ -34,9 +41,12 @@ struct LibraryView: View {
     @State private var isShowingImporter = false
     @State private var isShowingNowPlaying = false
     @State private var isShowingSongEditor = false
+    @State private var isShowingBatchSongEditor = false
     @State private var isImporting = false
     @State private var selectedCategoryFilter = LibraryCategoryFilter.all
+    @State private var selectedSongIDs = Set<UUID>()
     @State private var songBeingEdited: Song?
+    @State private var pendingBatchSongEdit: PendingBatchSongEdit?
     @State private var categoryNameBeingRenamed: String?
     @State private var renamedCategoryName = ""
     @State private var categoryNamePendingDeletion: String?
@@ -62,37 +72,44 @@ struct LibraryView: View {
                         description: Text("选择其他分类，或编辑歌曲以调整分类。")
                     )
                 } else {
-                    List {
+                    List(selection: $selectedSongIDs) {
                         ForEach(filteredSongs, id: \.id) { song in
                             songRow(song)
+                                .tag(song.id)
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                    Button {
-                                        presentSongEditor(for: song)
-                                    } label: {
-                                        Label("编辑", systemImage: "pencil")
-                                    }
-                                    .tint(.accentColor)
+                                    if !isEditing {
+                                        Button {
+                                            presentSongEditor(for: song)
+                                        } label: {
+                                            Label("编辑", systemImage: "pencil")
+                                        }
+                                        .tint(.accentColor)
 
-                                    Button(role: .destructive) {
-                                        deleteSong(song)
-                                    } label: {
-                                        Label("删除", systemImage: "trash")
+                                        Button(role: .destructive) {
+                                            deleteSong(song)
+                                        } label: {
+                                            Label("删除", systemImage: "trash")
+                                        }
                                     }
                                 }
                         }
-                        .onDelete(perform: deleteSongs)
                     }
                     .listStyle(.plain)
                 }
             }
-            .navigationTitle("本地音乐")
+            .navigationTitle(isEditing ? "已选择 \(selectedSongIDs.count) 首" : "本地音乐")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     categoryFilterMenu
                 }
 
-                ToolbarItem(placement: .topBarTrailing) {
-                    if isImporting {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if isEditing {
+                        Button("批量编辑", systemImage: "slider.horizontal.3") {
+                            isShowingBatchSongEditor = true
+                        }
+                        .disabled(selectedSongIDs.isEmpty)
+                    } else if isImporting {
                         ProgressView()
                             .accessibilityLabel("正在导入音乐")
                     } else {
@@ -100,6 +117,8 @@ struct LibraryView: View {
                             isShowingImporter = true
                         }
                     }
+
+                    EditButton()
                 }
             }
         }
@@ -143,6 +162,23 @@ struct LibraryView: View {
                     }
                 )
             }
+        }
+        .sheet(isPresented: $isShowingBatchSongEditor) {
+            BatchSongEditorView(
+                selectedSongCount: selectedBatchSongs.count,
+                categoryNames: categoryNames,
+                categoryPaths: categoryPaths,
+                onSubmit: { request in
+                    guard !selectedBatchSongs.isEmpty else {
+                        return
+                    }
+
+                    pendingBatchSongEdit = PendingBatchSongEdit(
+                        songIDs: selectedSongIDs,
+                        request: request
+                    )
+                }
+            )
         }
         .fileImporter(
             isPresented: $isShowingImporter,
@@ -255,11 +291,30 @@ struct LibraryView: View {
         } message: {
             Text(operationErrorMessage ?? "")
         }
+        .confirmationDialog(
+            "确认批量编辑",
+            item: $pendingBatchSongEdit,
+            titleVisibility: .visible
+        ) { pendingEdit in
+            Button("应用到 \(pendingEdit.songIDs.count) 首歌曲") {
+                applyBatchEdit(pendingEdit)
+            }
+
+            Button("取消", role: .cancel) {}
+        } message: { pendingEdit in
+            Text(batchEditSummary(for: pendingEdit))
+        }
         .onAppear {
             synchronizePlaybackQueue()
         }
         .onChange(of: selectedCategoryFilter) { _, _ in
+            clearBatchSelection()
             synchronizePlaybackQueue()
+        }
+        .onChange(of: isEditing) { _, isEditing in
+            if !isEditing {
+                clearBatchSelection()
+            }
         }
         .onChange(of: filteredSongs.map(\.id)) { _, _ in
             synchronizePlaybackQueue()
@@ -363,105 +418,125 @@ struct LibraryView: View {
         .accessibilityValue(selectedCategoryFilter.displayName)
     }
 
+    private var isEditing: Bool {
+        editMode?.wrappedValue.isEditing == true
+    }
+
+    private var selectedBatchSongs: [Song] {
+        songs.filter { selectedSongIDs.contains($0.id) }
+    }
+
     private func songRow(_ song: Song) -> some View {
         HStack(spacing: 8) {
-            Button {
-                togglePlayback(of: song)
-            } label: {
-                HStack(spacing: 12) {
-                    ArtworkThumbnail(artworkData: song.artworkData)
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(song.title)
-                            .lineLimit(1)
-
-                        Text(song.artist)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-
-                    Spacer()
-
-                    Text(formattedDuration(song.durationSeconds))
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-
-                    let isCurrentSong = audioPlayer.currentSongID == song.id
-
-                    Image(
-                        systemName: isCurrentSong && audioPlayer.isPlaying
-                            ? "speaker.wave.2.fill"
-                            : "play.fill"
-                    )
-                    .foregroundStyle(
-                        isCurrentSong ? Color.accentColor : Color.secondary
-                    )
+            if isEditing {
+                songRowContent(song)
+            } else {
+                Button {
+                    togglePlayback(of: song)
+                } label: {
+                    songRowContent(song)
                 }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
+                .accessibilityHint(
+                    audioPlayer.currentSongID == song.id && audioPlayer.isPlaying
+                        ? "暂停播放"
+                        : "播放歌曲"
+                )
+
+                songManagementMenu(for: song)
             }
-            .buttonStyle(.plain)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityElement(children: .combine)
-            .accessibilityHint(
-                audioPlayer.currentSongID == song.id && audioPlayer.isPlaying
-                    ? "暂停播放"
-                    : "播放歌曲"
-            )
+        }
+    }
 
-            Menu {
-                Button("重命名", systemImage: "pencil") {
-                    presentSongEditor(for: song)
+    private func songRowContent(_ song: Song) -> some View {
+        HStack(spacing: 12) {
+            ArtworkThumbnail(artworkData: song.artworkData)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(song.title)
+                    .lineLimit(1)
+
+                Text(song.artist)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            Text(formattedDuration(song.durationSeconds))
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+
+            let isCurrentSong = audioPlayer.currentSongID == song.id
+
+            Image(
+                systemName: isCurrentSong && audioPlayer.isPlaying
+                    ? "speaker.wave.2.fill"
+                    : "play.fill"
+            )
+            .foregroundStyle(
+                isCurrentSong ? Color.accentColor : Color.secondary
+            )
+        }
+    }
+
+    private func songManagementMenu(for song: Song) -> some View {
+        Menu {
+            Button("重命名", systemImage: "pencil") {
+                presentSongEditor(for: song)
+            }
+
+            Menu("移动到分类") {
+                Button("未分类", systemImage: "tray") {
+                    moveSong(song, toCategory: nil, subcategoryName: nil)
                 }
 
-                Menu("移动到分类") {
-                    Button("未分类", systemImage: "tray") {
-                        moveSong(song, toCategory: nil, subcategoryName: nil)
-                    }
+                ForEach(categoryNames, id: \.self) { categoryName in
+                    Menu(categoryName) {
+                        Button("仅 \(categoryName)") {
+                            moveSong(
+                                song,
+                                toCategory: categoryName,
+                                subcategoryName: nil
+                            )
+                        }
 
-                    ForEach(categoryNames, id: \.self) { categoryName in
-                        Menu(categoryName) {
-                            Button("仅 \(categoryName)") {
-                                moveSong(
-                                    song,
-                                    toCategory: categoryName,
-                                    subcategoryName: nil
-                                )
-                            }
+                        let subcategoryNames = subcategoryNames(for: categoryName)
 
-                            let subcategoryNames = subcategoryNames(for: categoryName)
+                        if !subcategoryNames.isEmpty {
+                            Divider()
 
-                            if !subcategoryNames.isEmpty {
-                                Divider()
-
-                                ForEach(subcategoryNames, id: \.self) { subcategoryName in
-                                    Button(subcategoryName) {
-                                        moveSong(
-                                            song,
-                                            toCategory: categoryName,
-                                            subcategoryName: subcategoryName
-                                        )
-                                    }
+                            ForEach(subcategoryNames, id: \.self) { subcategoryName in
+                                Button(subcategoryName) {
+                                    moveSong(
+                                        song,
+                                        toCategory: categoryName,
+                                        subcategoryName: subcategoryName
+                                    )
                                 }
                             }
                         }
                     }
-
-                    Divider()
-
-                    Button("新建分类…", systemImage: "plus") {
-                        presentSongEditor(for: song)
-                    }
                 }
 
-                Button("删除", systemImage: "trash", role: .destructive) {
-                    deleteSong(song)
+                Divider()
+
+                Button("新建分类…", systemImage: "plus") {
+                    presentSongEditor(for: song)
                 }
-            } label: {
-                Image(systemName: "ellipsis.circle")
-                    .font(.title3)
             }
-            .accessibilityLabel("管理 \(song.title)")
+
+            Button("删除", systemImage: "trash", role: .destructive) {
+                deleteSong(song)
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.title3)
         }
+        .accessibilityLabel("管理 \(song.title)")
     }
 
     @MainActor
@@ -552,6 +627,79 @@ struct LibraryView: View {
         }
 
         return true
+    }
+
+    private func applyBatchEdit(_ pendingEdit: PendingBatchSongEdit) {
+        let selectedSongs = songs.filter {
+            pendingEdit.songIDs.contains($0.id)
+        }
+
+        guard selectedSongs.count == pendingEdit.songIDs.count else {
+            operationErrorMessage = "部分已选择歌曲已不在资料库中，请重新选择。"
+            clearBatchSelection()
+            return
+        }
+
+        let snapshot: BatchSongEditSnapshot
+
+        do {
+            snapshot = try pendingEdit.request.apply(
+                to: selectedSongs,
+                existingCategoryPaths: categoryPaths
+            )
+        } catch {
+            operationErrorMessage = "无法应用批量编辑：\(error.localizedDescription)"
+            return
+        }
+
+        do {
+            try modelContext.save()
+        } catch {
+            snapshot.restore()
+            operationErrorMessage = "保存批量编辑失败：\(error.localizedDescription)"
+            return
+        }
+
+        if pendingEdit.request.changesArtwork,
+           let currentSongID = audioPlayer.currentSongID,
+           pendingEdit.songIDs.contains(currentSongID) {
+            audioPlayer.refreshNowPlayingInfo()
+        }
+
+        clearBatchSelection()
+        editMode?.wrappedValue = .inactive
+    }
+
+    private func clearBatchSelection() {
+        selectedSongIDs.removeAll()
+        isShowingBatchSongEditor = false
+        pendingBatchSongEdit = nil
+    }
+
+    private func batchEditSummary(for pendingEdit: PendingBatchSongEdit) -> String {
+        var changes = [String]()
+
+        switch pendingEdit.request.categoryChange {
+        case .unchanged:
+            break
+        case let .move(categoryName?, subcategoryName?):
+            changes.append("分类设为“\(categoryName) / \(subcategoryName)”")
+        case let .move(categoryName?, nil):
+            changes.append("分类设为“\(categoryName)”")
+        case .move(nil, _):
+            changes.append("设为未分类")
+        }
+
+        switch pendingEdit.request.artworkChange {
+        case .unchanged:
+            break
+        case .replace(_):
+            changes.append("设置同一张封面")
+        case .remove:
+            changes.append("移除封面")
+        }
+
+        return "将对 \(pendingEdit.songIDs.count) 首歌曲\(changes.joined(separator: "，"))。"
     }
 
     private func moveSong(

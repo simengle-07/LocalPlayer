@@ -1,10 +1,12 @@
 import SwiftUI
+import SwiftData
 
 @main
 struct LocalPlayerApp: App {
     var body: some Scene {
         WindowGroup {
-            Text("Hello, World!")
+            Text("LocalPlayer")
         }
+        .modelContainer(for: Song.self)
     }
 }

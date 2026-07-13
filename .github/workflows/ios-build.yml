@@ -25,7 +25,7 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Build for iOS Simulator
+      - name: Build and test for iOS Simulator
         run: >
           xcodebuild
           -project LocalPlayer.xcodeproj
@@ -33,4 +33,4 @@ jobs:
           -sdk iphonesimulator
           -destination 'generic/platform=iOS Simulator'
           CODE_SIGNING_ALLOWED=NO
-          build
+          test

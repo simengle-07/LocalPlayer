@@ -16,13 +16,27 @@ targets:
     platform: iOS
     sources:
       - path: App
+      - path: Models
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.mika.localplayer
         GENERATE_INFOPLIST_FILE: YES
+
+  LocalPlayerTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: LocalPlayerTests
+    dependencies:
+      - target: LocalPlayer
 
 schemes:
   LocalPlayer:
     build:
       targets:
         LocalPlayer: all
+        LocalPlayerTests: [test]
+    test:
+      gatherCoverageData: true
+      targets:
+        - LocalPlayerTests

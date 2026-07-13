@@ -12,6 +12,7 @@ struct LibraryView: View {
     private var songs: [Song]
 
     @State private var isShowingImporter = false
+    @State private var isShowingNowPlaying = false
     @State private var isImporting = false
     @State private var operationErrorMessage: String?
 
@@ -94,9 +95,19 @@ struct LibraryView: View {
                 MiniPlayerBar(
                     song: currentSong,
                     songs: songs,
-                    operationErrorMessage: $operationErrorMessage
+                    operationErrorMessage: $operationErrorMessage,
+                    onOpenPlayer: {
+                        isShowingNowPlaying = true
+                    }
                 )
             }
+        }
+        .sheet(isPresented: $isShowingNowPlaying) {
+            NowPlayingView(
+                songs: songs,
+                operationErrorMessage: $operationErrorMessage
+            )
+            .environmentObject(audioPlayer)
         }
         .fileImporter(
             isPresented: $isShowingImporter,
@@ -224,6 +235,7 @@ struct LibraryView: View {
 
 struct ArtworkThumbnail: View {
     let artworkData: Data?
+    var size: CGFloat = 44
 
     var body: some View {
         Group {
@@ -234,11 +246,11 @@ struct ArtworkThumbnail: View {
                     .scaledToFill()
             } else {
                 Image(systemName: "music.note")
-                    .font(.title3)
+                    .font(.system(size: size * 0.36))
                     .foregroundStyle(.secondary)
             }
         }
-        .frame(width: 44, height: 44)
+        .frame(width: size, height: size)
         .background(.quaternary)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .accessibilityHidden(true)

@@ -6,6 +6,7 @@ struct MiniPlayerBar: View {
     let songs: [Song]
 
     @Binding var operationErrorMessage: String?
+    let onOpenPlayer: () -> Void
 
     @EnvironmentObject private var audioPlayer: AudioPlayerService
 
@@ -21,20 +22,26 @@ struct MiniPlayerBar: View {
             .accessibilityValue(formattedDuration(audioPlayer.currentTime))
 
             HStack(spacing: 12) {
-                ArtworkThumbnail(artworkData: song.artworkData)
+                Button(action: onOpenPlayer) {
+                    HStack(spacing: 12) {
+                        ArtworkThumbnail(artworkData: song.artworkData)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(song.title)
-                        .font(.subheadline.weight(.medium))
-                        .lineLimit(1)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(song.title)
+                                .font(.subheadline.weight(.medium))
+                                .lineLimit(1)
 
-                    Text(song.artist)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                            Text(song.artist)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
                 }
-
-                Spacer(minLength: 8)
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityLabel("打开正在播放页面")
+                .accessibilityHint("查看完整播放控制")
 
                 Button(action: playPrevious) {
                     Image(systemName: "backward.fill")

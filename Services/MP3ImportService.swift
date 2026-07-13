@@ -86,7 +86,7 @@ struct MP3ImportService {
 
     func removeStoredMP3(named storageFileName: String) throws {
         guard storageFileName == URL(fileURLWithPath: storageFileName).lastPathComponent,
-              storageFileName.pathExtension.lowercased() == "mp3"
+              URL(fileURLWithPath: storageFileName).pathExtension.lowercased() == "mp3"
         else {
             return
         }

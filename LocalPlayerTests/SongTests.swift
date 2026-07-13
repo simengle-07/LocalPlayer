@@ -95,4 +95,17 @@ struct SongTests {
             }
         }
     }
+
+    @Test
+    func keepsPlaybackVolumeWithinTheSupportedRange() async {
+        await MainActor.run {
+            let player = AudioPlayerService()
+
+            player.setVolume(1.5)
+            #expect(player.volume == 1)
+
+            player.setVolume(-0.25)
+            #expect(player.volume == 0)
+        }
+    }
 }

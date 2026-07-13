@@ -23,10 +23,14 @@ enum AudioPlayerError: LocalizedError {
 final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published private(set) var currentSongID: UUID?
     @Published private(set) var isPlaying = false
+    @Published private(set) var currentTime: TimeInterval = 0
+    @Published private(set) var duration: TimeInterval = 0
+    @Published private(set) var volume: Float = 1
 
     private let fileManager: FileManager
     private let musicDirectoryURL: URL?
     private var audioPlayer: AVAudioPlayer?
+    private var progressTimer: Timer?
 
     init(
         fileManager: FileManager = .default,
@@ -41,12 +45,15 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
             if audioPlayer.isPlaying {
                 audioPlayer.pause()
                 isPlaying = false
+                currentTime = audioPlayer.currentTime
+                stopProgressUpdates()
             } else {
                 guard audioPlayer.play() else {
                     throw AudioPlayerError.cannotStartPlayback
                 }
 
                 isPlaying = true
+                startProgressUpdates()
             }
 
             return
@@ -61,14 +68,20 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
 
             let player = try AVAudioPlayer(contentsOf: fileURL)
             player.delegate = self
+            player.volume = volume
 
-            guard player.play() else {
+            guard player.prepareToPlay(), player.play() else {
                 throw AudioPlayerError.cannotStartPlayback
             }
 
+            audioPlayer?.stop()
+            stopProgressUpdates()
             audioPlayer = player
             currentSongID = song.id
             isPlaying = true
+            currentTime = player.currentTime
+            duration = player.duration
+            startProgressUpdates()
         } catch let error as AudioPlayerError {
             throw error
         } catch {
@@ -76,11 +89,31 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
         }
     }
 
+    func seek(to time: TimeInterval) {
+        guard let audioPlayer else {
+            return
+        }
+
+        let targetTime = min(max(time, 0), audioPlayer.duration)
+        audioPlayer.currentTime = targetTime
+        currentTime = targetTime
+        duration = audioPlayer.duration
+    }
+
+    func setVolume(_ newVolume: Float) {
+        let clampedVolume = min(max(newVolume, 0), 1)
+        volume = clampedVolume
+        audioPlayer?.volume = clampedVolume
+    }
+
     func stopPlayback() {
         audioPlayer?.stop()
         audioPlayer = nil
         currentSongID = nil
         isPlaying = false
+        currentTime = 0
+        duration = 0
+        stopProgressUpdates()
     }
 
     func audioPlayerDidFinishPlaying(
@@ -89,6 +122,8 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
     ) {
         player.currentTime = 0
         isPlaying = false
+        currentTime = 0
+        stopProgressUpdates()
     }
 
     private func storedFileURL(for song: Song) throws -> URL {
@@ -108,5 +143,30 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
         }
 
         return fileURL
+    }
+
+    private func startProgressUpdates() {
+        stopProgressUpdates()
+
+        progressTimer = Timer.scheduledTimer(
+            withTimeInterval: 0.25,
+            repeats: true
+        ) { [weak self] _ in
+            self?.updatePlaybackProgress()
+        }
+    }
+
+    private func stopProgressUpdates() {
+        progressTimer?.invalidate()
+        progressTimer = nil
+    }
+
+    private func updatePlaybackProgress() {
+        guard let audioPlayer else {
+            return
+        }
+
+        currentTime = audioPlayer.currentTime
+        duration = audioPlayer.duration
     }
 }

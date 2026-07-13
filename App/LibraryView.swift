@@ -57,6 +57,10 @@ struct LibraryView: View {
     private let importer = MP3ImportService()
 
     var body: some View {
+        lifecycleContent
+    }
+
+    private var navigationContent: some View {
         NavigationStack {
             Group {
                 if songs.isEmpty {
@@ -122,6 +126,10 @@ struct LibraryView: View {
                 }
             }
         }
+    }
+
+    private var playerInsetContent: some View {
+        navigationContent
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if let currentSong {
                 MiniPlayerBar(
@@ -134,6 +142,10 @@ struct LibraryView: View {
                 )
             }
         }
+    }
+
+    private var sheetContent: some View {
+        playerInsetContent
         .sheet(isPresented: $isShowingNowPlaying) {
             NowPlayingView(
                 librarySongs: songs,
@@ -180,6 +192,10 @@ struct LibraryView: View {
                 }
             )
         }
+    }
+
+    private var importerContent: some View {
+        sheetContent
         .fileImporter(
             isPresented: $isShowingImporter,
             allowedContentTypes: [.mp3],
@@ -194,6 +210,10 @@ struct LibraryView: View {
                 operationErrorMessage = "无法打开文件选择器：\(error.localizedDescription)"
             }
         }
+    }
+
+    private var categoryDialogContent: some View {
+        importerContent
         .alert(
             "重命名分类",
             isPresented: Binding(
@@ -233,6 +253,10 @@ struct LibraryView: View {
         } message: {
             Text("删除“\(categoryNamePendingDeletion ?? "")”后，其中的歌曲会变为未分类。")
         }
+    }
+
+    private var subcategoryDialogContent: some View {
+        categoryDialogContent
         .alert(
             "重命名二级分类",
             isPresented: Binding(
@@ -274,6 +298,10 @@ struct LibraryView: View {
                 "删除“\(subcategoryPathPendingDeletion?.displayName ?? "")”后，其中的歌曲会保留在一级分类。"
             )
         }
+    }
+
+    private var errorDialogContent: some View {
+        subcategoryDialogContent
         .alert(
             "操作未完成",
             isPresented: Binding(
@@ -304,6 +332,10 @@ struct LibraryView: View {
         } message: { pendingEdit in
             Text(batchEditSummary(for: pendingEdit))
         }
+    }
+
+    private var lifecycleContent: some View {
+        errorDialogContent
         .onAppear {
             synchronizePlaybackQueue()
         }

@@ -34,6 +34,7 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
     private var audioPlayer: AVAudioPlayer?
     private var progressTimer: Timer?
     private var nowPlayingSong: Song?
+    private var playbackQueue = [Song]()
     private var remoteCommandsConfigured = false
 
     init(
@@ -42,6 +43,11 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
     ) {
         self.fileManager = fileManager
         self.musicDirectoryURL = musicDirectoryURL
+    }
+
+    func setPlaybackQueue(_ songs: [Song]) {
+        playbackQueue = songs
+        updateRemoteTrackCommandAvailability()
     }
 
     func togglePlayback(of song: Song) throws {
@@ -131,6 +137,24 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
         return songs[targetIndex]
     }
 
+    static func trackCommandAvailability(
+        in songs: [Song],
+        relativeTo currentSongID: UUID?
+    ) -> (previous: Bool, next: Bool) {
+        (
+            previous: adjacentSong(
+                in: songs,
+                relativeTo: currentSongID,
+                offset: -1
+            ) != nil,
+            next: adjacentSong(
+                in: songs,
+                relativeTo: currentSongID,
+                offset: 1
+            ) != nil
+        )
+    }
+
     private func startPlayback(of song: Song) throws {
         let fileURL = try storedFileURL(for: song)
 
@@ -156,6 +180,7 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
             currentTime = player.currentTime
             duration = player.duration
             configureRemoteCommandsIfNeeded()
+            updateRemoteTrackCommandAvailability()
             publishNowPlayingInfo()
             startProgressUpdates()
         } catch let error as AudioPlayerError {
@@ -193,6 +218,7 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
         duration = 0
         stopProgressUpdates()
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        updateRemoteTrackCommandAvailability()
     }
 
     func audioPlayerDidFinishPlaying(
@@ -330,8 +356,6 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
         }
 
         let commandCenter = MPRemoteCommandCenter.shared()
-        commandCenter.nextTrackCommand.isEnabled = false
-        commandCenter.previousTrackCommand.isEnabled = false
 
         commandCenter.playCommand.addTarget { [weak self] _ in
             self?.handleRemotePlayCommand() ?? .noActionableNowPlayingItem
@@ -342,8 +366,15 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
             self?.handleRemoteToggleCommand() ?? .noActionableNowPlayingItem
         }
+        commandCenter.previousTrackCommand.addTarget { [weak self] _ in
+            self?.handleRemotePreviousTrackCommand() ?? .noActionableNowPlayingItem
+        }
+        commandCenter.nextTrackCommand.addTarget { [weak self] _ in
+            self?.handleRemoteNextTrackCommand() ?? .noActionableNowPlayingItem
+        }
 
         remoteCommandsConfigured = true
+        updateRemoteTrackCommandAvailability()
     }
 
     private func handleRemotePlayCommand() -> MPRemoteCommandHandlerStatus {
@@ -384,5 +415,61 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
         } catch {
             return .commandFailed
         }
+    }
+
+    private func handleRemotePreviousTrackCommand() -> MPRemoteCommandHandlerStatus {
+        guard let currentSongID else {
+            return .noActionableNowPlayingItem
+        }
+
+        guard let previousSong = Self.adjacentSong(
+            in: playbackQueue,
+            relativeTo: currentSongID,
+            offset: -1
+        ) else {
+            return .noSuchContent
+        }
+
+        do {
+            try play(previousSong)
+            return .success
+        } catch {
+            return .commandFailed
+        }
+    }
+
+    private func handleRemoteNextTrackCommand() -> MPRemoteCommandHandlerStatus {
+        guard let currentSongID else {
+            return .noActionableNowPlayingItem
+        }
+
+        guard let nextSong = Self.adjacentSong(
+            in: playbackQueue,
+            relativeTo: currentSongID,
+            offset: 1
+        ) else {
+            return .noSuchContent
+        }
+
+        do {
+            try play(nextSong)
+            return .success
+        } catch {
+            return .commandFailed
+        }
+    }
+
+    private func updateRemoteTrackCommandAvailability() {
+        guard remoteCommandsConfigured else {
+            return
+        }
+
+        let availability = Self.trackCommandAvailability(
+            in: playbackQueue,
+            relativeTo: currentSongID
+        )
+        let commandCenter = MPRemoteCommandCenter.shared()
+        commandCenter.previousTrackCommand.isEnabled = availability.previous
+        commandCenter.nextTrackCommand.isEnabled = availability.next
     }
 }

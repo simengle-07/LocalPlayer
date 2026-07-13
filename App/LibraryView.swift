@@ -140,6 +140,12 @@ struct LibraryView: View {
         } message: {
             Text(operationErrorMessage ?? "")
         }
+        .onAppear {
+            audioPlayer.setPlaybackQueue(songs)
+        }
+        .onChange(of: songs.map(\.id)) { _, _ in
+            audioPlayer.setPlaybackQueue(songs)
+        }
     }
 
     @MainActor

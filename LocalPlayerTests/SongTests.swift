@@ -142,6 +142,29 @@ struct SongTests {
     }
 
     @Test
+    func reportsTrackCommandAvailabilityFromThePlaybackQueue() async {
+        await MainActor.run {
+            let first = Self.makeSong(title: "First")
+            let second = Self.makeSong(title: "Second")
+            let songs = [first, second]
+
+            let firstAvailability = AudioPlayerService.trackCommandAvailability(
+                in: songs,
+                relativeTo: first.id
+            )
+            let secondAvailability = AudioPlayerService.trackCommandAvailability(
+                in: songs,
+                relativeTo: second.id
+            )
+
+            #expect(!firstAvailability.previous)
+            #expect(firstAvailability.next)
+            #expect(secondAvailability.previous)
+            #expect(!secondAvailability.next)
+        }
+    }
+
+    @Test
     func mapsCurrentSongToNowPlayingMetadata() async {
         await MainActor.run {
             let song = Self.makeSong(title: "Now Playing")

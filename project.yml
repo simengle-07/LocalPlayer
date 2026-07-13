@@ -18,11 +18,14 @@ targets:
       - path: App
       - path: Models
       - path: Services
+    info:
+      path: App/Info.plist
+      properties:
+        UIBackgroundModes:
+          - audio
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.mika.localplayer
-        GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_UIBackgroundModes: audio
 
   LocalPlayerTests:
     type: bundle.unit-test

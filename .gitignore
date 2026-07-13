@@ -5,6 +5,7 @@ build/
 *.xcworkspace/
 xcuserdata/
 *.xcuserstate
+App/Info.plist
 
 # Apple 签名材料：绝不上传
 *.mobileprovision

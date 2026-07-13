@@ -1,4 +1,5 @@
 import Foundation
+import MediaPlayer
 import Testing
 
 @testable import LocalPlayer
@@ -137,6 +138,25 @@ struct SongTests {
                     offset: 2
                 ) == nil
             )
+        }
+    }
+
+    @Test
+    func mapsCurrentSongToNowPlayingMetadata() async {
+        await MainActor.run {
+            let song = Self.makeSong(title: "Now Playing")
+            let nowPlayingInfo = AudioPlayerService.nowPlayingInfo(
+                for: song,
+                elapsedTime: 30,
+                duration: 120,
+                isPlaying: true
+            )
+
+            #expect(nowPlayingInfo[MPMediaItemPropertyTitle] as? String == "Now Playing")
+            #expect(nowPlayingInfo[MPMediaItemPropertyArtist] as? String == "Test Artist")
+            #expect(nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] as? Double == 120)
+            #expect(nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] as? Double == 30)
+            #expect(nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] as? Double == 1)
         }
     }
 

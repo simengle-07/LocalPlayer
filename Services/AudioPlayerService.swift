@@ -1,6 +1,8 @@
 import AVFoundation
 import Combine
 import Foundation
+import MediaPlayer
+import UIKit
 
 enum AudioPlayerError: LocalizedError {
     case invalidStoredFileName
@@ -31,6 +33,8 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
     private let musicDirectoryURL: URL?
     private var audioPlayer: AVAudioPlayer?
     private var progressTimer: Timer?
+    private var nowPlayingSong: Song?
+    private var remoteCommandsConfigured = false
 
     init(
         fileManager: FileManager = .default,
@@ -43,17 +47,9 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
     func togglePlayback(of song: Song) throws {
         if currentSongID == song.id, let audioPlayer {
             if audioPlayer.isPlaying {
-                audioPlayer.pause()
-                isPlaying = false
-                currentTime = audioPlayer.currentTime
-                stopProgressUpdates()
+                pausePlayback()
             } else {
-                guard audioPlayer.play() else {
-                    throw AudioPlayerError.cannotStartPlayback
-                }
-
-                isPlaying = true
-                startProgressUpdates()
+                try resumePlayback()
             }
 
             return
@@ -68,12 +64,7 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
                 return
             }
 
-            guard audioPlayer.play() else {
-                throw AudioPlayerError.cannotStartPlayback
-            }
-
-            isPlaying = true
-            startProgressUpdates()
+            try resumePlayback()
             return
         }
 
@@ -159,10 +150,13 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
             audioPlayer?.stop()
             stopProgressUpdates()
             audioPlayer = player
+            nowPlayingSong = song
             currentSongID = song.id
             isPlaying = true
             currentTime = player.currentTime
             duration = player.duration
+            configureRemoteCommandsIfNeeded()
+            publishNowPlayingInfo()
             startProgressUpdates()
         } catch let error as AudioPlayerError {
             throw error
@@ -180,6 +174,7 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
         audioPlayer.currentTime = targetTime
         currentTime = targetTime
         duration = audioPlayer.duration
+        publishNowPlayingInfo()
     }
 
     func setVolume(_ newVolume: Float) {
@@ -191,21 +186,59 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
     func stopPlayback() {
         audioPlayer?.stop()
         audioPlayer = nil
+        nowPlayingSong = nil
         currentSongID = nil
         isPlaying = false
         currentTime = 0
         duration = 0
         stopProgressUpdates()
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
 
     func audioPlayerDidFinishPlaying(
         _ player: AVAudioPlayer,
         successfully flag: Bool
     ) {
+        guard player === audioPlayer else {
+            return
+        }
+
         player.currentTime = 0
         isPlaying = false
         currentTime = 0
         stopProgressUpdates()
+        publishNowPlayingInfo()
+    }
+
+    static func nowPlayingInfo(
+        for song: Song,
+        elapsedTime: TimeInterval,
+        duration: TimeInterval,
+        isPlaying: Bool
+    ) -> [String: Any] {
+        let resolvedDuration = max(duration, 0)
+        let resolvedElapsedTime = min(max(elapsedTime, 0), resolvedDuration)
+        var nowPlayingInfo: [String: Any] = [
+            MPMediaItemPropertyTitle: song.title,
+            MPMediaItemPropertyArtist: song.artist,
+            MPMediaItemPropertyPlaybackDuration: resolvedDuration,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: resolvedElapsedTime,
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyMediaType: NSNumber(
+                value: MPNowPlayingInfoMediaType.audio.rawValue
+            )
+        ]
+
+        if let artworkData = song.artworkData,
+           let artworkImage = UIImage(data: artworkData) {
+            nowPlayingInfo[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(
+                bounds: artworkImage.size
+            ) { _ in
+                artworkImage
+            }
+        }
+
+        return nowPlayingInfo
     }
 
     private func storedFileURL(for song: Song) throws -> URL {
@@ -250,5 +283,106 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
 
         currentTime = audioPlayer.currentTime
         duration = audioPlayer.duration
+    }
+
+    private func pausePlayback() {
+        guard let audioPlayer else {
+            return
+        }
+
+        audioPlayer.pause()
+        isPlaying = false
+        currentTime = audioPlayer.currentTime
+        stopProgressUpdates()
+        publishNowPlayingInfo()
+    }
+
+    private func resumePlayback() throws {
+        guard let audioPlayer,
+              audioPlayer.play() else {
+            throw AudioPlayerError.cannotStartPlayback
+        }
+
+        isPlaying = true
+        currentTime = audioPlayer.currentTime
+        duration = audioPlayer.duration
+        startProgressUpdates()
+        publishNowPlayingInfo()
+    }
+
+    private func publishNowPlayingInfo() {
+        guard let nowPlayingSong else {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            return
+        }
+
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = Self.nowPlayingInfo(
+            for: nowPlayingSong,
+            elapsedTime: currentTime,
+            duration: duration,
+            isPlaying: isPlaying
+        )
+    }
+
+    private func configureRemoteCommandsIfNeeded() {
+        guard !remoteCommandsConfigured else {
+            return
+        }
+
+        let commandCenter = MPRemoteCommandCenter.shared()
+        commandCenter.nextTrackCommand.isEnabled = false
+        commandCenter.previousTrackCommand.isEnabled = false
+
+        commandCenter.playCommand.addTarget { [weak self] _ in
+            self?.handleRemotePlayCommand() ?? .noActionableNowPlayingItem
+        }
+        commandCenter.pauseCommand.addTarget { [weak self] _ in
+            self?.handleRemotePauseCommand() ?? .noActionableNowPlayingItem
+        }
+        commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
+            self?.handleRemoteToggleCommand() ?? .noActionableNowPlayingItem
+        }
+
+        remoteCommandsConfigured = true
+    }
+
+    private func handleRemotePlayCommand() -> MPRemoteCommandHandlerStatus {
+        guard nowPlayingSong != nil else {
+            return .noActionableNowPlayingItem
+        }
+
+        do {
+            try resumePlayback()
+            return .success
+        } catch {
+            return .commandFailed
+        }
+    }
+
+    private func handleRemotePauseCommand() -> MPRemoteCommandHandlerStatus {
+        guard audioPlayer != nil else {
+            return .noActionableNowPlayingItem
+        }
+
+        pausePlayback()
+        return .success
+    }
+
+    private func handleRemoteToggleCommand() -> MPRemoteCommandHandlerStatus {
+        guard let audioPlayer else {
+            return .noActionableNowPlayingItem
+        }
+
+        do {
+            if audioPlayer.isPlaying {
+                pausePlayback()
+            } else {
+                try resumePlayback()
+            }
+
+            return .success
+        } catch {
+            return .commandFailed
+        }
     }
 }

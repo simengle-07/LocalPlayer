@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import UIKit
 
 @Model
 final class Song {
@@ -57,8 +58,26 @@ final class Song {
         )
     }
 
+    @discardableResult
+    func replaceArtwork(with newArtworkData: Data) -> Bool {
+        guard Self.isValidArtworkData(newArtworkData) else {
+            return false
+        }
+
+        artworkData = newArtworkData
+        return true
+    }
+
+    func removeArtwork() {
+        artworkData = nil
+    }
+
     static func normalizedTitle(from rawTitle: String) -> String? {
         normalizedText(from: rawTitle)
+    }
+
+    static func isValidArtworkData(_ artworkData: Data) -> Bool {
+        UIImage(data: artworkData) != nil
     }
 
     static func normalizedCategoryName(from rawCategoryName: String?) -> String? {

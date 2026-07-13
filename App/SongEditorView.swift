@@ -1,27 +1,38 @@
+import Foundation
 import SwiftUI
+
+enum SongArtworkChange {
+    case unchanged
+    case replace(Data)
+    case remove
+}
 
 struct SongEditorView: View {
     let song: Song
     let categoryNames: [String]
-    let onSave: (String, String?) -> Bool
+    let onSave: (String, String?, SongArtworkChange) -> Bool
 
     @Environment(\.dismiss) private var dismiss
 
     @State private var title: String
     @State private var selectedCategoryName: String?
     @State private var newCategoryName = ""
+    @State private var artworkData: Data?
+    @State private var didChangeArtwork = false
+    @State private var isLoadingArtwork = false
     @State private var validationMessage: String?
 
     init(
         song: Song,
         categoryNames: [String],
-        onSave: @escaping (String, String?) -> Bool
+        onSave: @escaping (String, String?, SongArtworkChange) -> Bool
     ) {
         self.song = song
         self.categoryNames = categoryNames
         self.onSave = onSave
         _title = State(initialValue: song.title)
         _selectedCategoryName = State(initialValue: song.categoryName)
+        _artworkData = State(initialValue: song.artworkData)
     }
 
     var body: some View {
@@ -50,6 +61,13 @@ struct SongEditorView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
+
+                ArtworkEditorSection(
+                    artworkData: $artworkData,
+                    didChangeArtwork: $didChangeArtwork,
+                    errorMessage: $validationMessage,
+                    isLoadingArtwork: $isLoadingArtwork
+                )
             }
             .navigationTitle("编辑歌曲")
             .navigationBarTitleDisplayMode(.inline)
@@ -62,10 +80,11 @@ struct SongEditorView: View {
 
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存", action: save)
+                        .disabled(isLoadingArtwork)
                 }
             }
             .alert(
-                "无法保存",
+                "操作未完成",
                 isPresented: Binding(
                     get: { validationMessage != nil },
                     set: { isPresented in
@@ -92,8 +111,19 @@ struct SongEditorView: View {
 
         let requestedCategoryName = Song.normalizedCategoryName(from: newCategoryName)
             ?? selectedCategoryName
+        let artworkChange: SongArtworkChange
 
-        if onSave(title, requestedCategoryName) {
+        if didChangeArtwork {
+            if let artworkData {
+                artworkChange = .replace(artworkData)
+            } else {
+                artworkChange = .remove
+            }
+        } else {
+            artworkChange = .unchanged
+        }
+
+        if onSave(title, requestedCategoryName, artworkChange) {
             dismiss()
         }
     }

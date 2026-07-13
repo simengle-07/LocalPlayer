@@ -126,11 +126,12 @@ struct LibraryView: View {
                 SongEditorView(
                     song: songBeingEdited,
                     categoryNames: categoryNames,
-                    onSave: { title, categoryName in
+                    onSave: { title, categoryName, artworkChange in
                         saveSongEdits(
                             for: songBeingEdited,
                             title: title,
-                            categoryName: categoryName
+                            categoryName: categoryName,
+                            artworkChange: artworkChange
                         )
                     }
                 )
@@ -391,10 +392,12 @@ struct LibraryView: View {
     private func saveSongEdits(
         for song: Song,
         title: String,
-        categoryName: String?
+        categoryName: String?,
+        artworkChange: SongArtworkChange
     ) -> Bool {
         let originalTitle = song.title
         let originalCategoryName = song.categoryName
+        let originalArtworkData = song.artworkData
 
         guard song.rename(to: title) else {
             operationErrorMessage = "歌曲名称不能为空。"
@@ -406,9 +409,24 @@ struct LibraryView: View {
             existingCategoryNames: categoryNames
         )
 
+        switch artworkChange {
+        case .unchanged:
+            break
+        case .replace(let artworkData):
+            guard song.replaceArtwork(with: artworkData) else {
+                song.title = originalTitle
+                song.categoryName = originalCategoryName
+                operationErrorMessage = "所选封面不是可用的图片。"
+                return false
+            }
+        case .remove:
+            song.removeArtwork()
+        }
+
         guard saveModelChanges(withFailureMessage: "保存歌曲编辑失败") else {
             song.title = originalTitle
             song.categoryName = originalCategoryName
+            song.artworkData = originalArtworkData
             return false
         }
 

@@ -1,6 +1,7 @@
 import Foundation
 import MediaPlayer
 import Testing
+import UIKit
 
 @testable import LocalPlayer
 
@@ -84,6 +85,21 @@ struct SongTests {
         #expect(first.categoryName == nil)
         #expect(second.categoryName == nil)
         #expect(unaffected.categoryName == "Jazz")
+    }
+
+    @Test
+    func replacesAndRemovesArtworkWithoutAcceptingInvalidImageData() {
+        let song = Self.makeSong(title: "Artwork")
+        let validArtworkData = Self.makeArtworkData()
+
+        #expect(song.replaceArtwork(with: validArtworkData))
+        #expect(song.artworkData == validArtworkData)
+
+        #expect(!song.replaceArtwork(with: Data("not-an-image".utf8)))
+        #expect(song.artworkData == validArtworkData)
+
+        song.removeArtwork()
+        #expect(song.artworkData == nil)
     }
 
     @Test
@@ -254,5 +270,15 @@ struct SongTests {
             artworkData: nil,
             importedAt: .now
         )
+    }
+
+    private static func makeArtworkData() -> Data {
+        let size = CGSize(width: 2, height: 2)
+        let renderer = UIGraphicsImageRenderer(size: size)
+
+        return renderer.pngData { context in
+            context.cgContext.setFillColor(UIColor.systemBlue.cgColor)
+            context.cgContext.fill(CGRect(origin: .zero, size: size))
+        }
     }
 }

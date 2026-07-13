@@ -23,6 +23,67 @@ struct SongTests {
         #expect(song.artist == "Test Artist")
         #expect(song.durationSeconds == 180.0)
         #expect(song.artworkData == nil)
+        #expect(song.categoryName == nil)
+    }
+
+    @Test
+    func renamesSongWithTrimmedTitleAndRejectsBlankTitle() {
+        let song = Self.makeSong(title: "Original")
+
+        #expect(song.rename(to: "  Renamed Song  "))
+        #expect(song.title == "Renamed Song")
+
+        #expect(!song.rename(to: "   "))
+        #expect(song.title == "Renamed Song")
+    }
+
+    @Test
+    func movesSongToAnExistingCategoryWithoutCreatingCaseVariant() {
+        let song = Self.makeSong(title: "Song")
+
+        song.move(toCategory: "  rock  ", existingCategoryNames: ["Rock"])
+        #expect(song.categoryName == "Rock")
+
+        song.move(toCategory: nil, existingCategoryNames: ["Rock"])
+        #expect(song.categoryName == nil)
+    }
+
+    @Test
+    func listsUniqueNormalizedCategoryNames() {
+        let rock = Self.makeSong(title: "Rock")
+        rock.categoryName = "Rock"
+        let duplicateRock = Self.makeSong(title: "Duplicate rock")
+        duplicateRock.categoryName = " rock "
+        let jazz = Self.makeSong(title: "Jazz")
+        jazz.categoryName = "Jazz"
+
+        #expect(Song.categoryNames(in: [rock, duplicateRock, jazz]) == ["Jazz", "Rock"])
+    }
+
+    @Test
+    func renamesAndRemovesCategoriesForMatchingSongs() {
+        let first = Self.makeSong(title: "First")
+        first.categoryName = "Rock"
+        let second = Self.makeSong(title: "Second")
+        second.categoryName = "rock"
+        let unaffected = Self.makeSong(title: "Unaffected")
+        unaffected.categoryName = "Jazz"
+
+        let renamedCategory = Song.renameCategory(
+            named: "ROCK",
+            to: "  Indie  ",
+            in: [first, second, unaffected]
+        )
+
+        #expect(renamedCategory == "Indie")
+        #expect(first.categoryName == "Indie")
+        #expect(second.categoryName == "Indie")
+        #expect(unaffected.categoryName == "Jazz")
+
+        #expect(Song.removeCategory(named: "indie", from: [first, second, unaffected]))
+        #expect(first.categoryName == nil)
+        #expect(second.categoryName == nil)
+        #expect(unaffected.categoryName == "Jazz")
     }
 
     @Test

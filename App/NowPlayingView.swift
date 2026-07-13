@@ -2,7 +2,8 @@ import Foundation
 import SwiftUI
 
 struct NowPlayingView: View {
-    let songs: [Song]
+    let librarySongs: [Song]
+    let playbackQueue: [Song]
 
     @Binding var operationErrorMessage: String?
 
@@ -61,7 +62,7 @@ struct NowPlayingView: View {
                                     Image(systemName: "backward.fill")
                                         .font(.title2)
                                 }
-                                .disabled(!audioPlayer.hasPrevious(in: songs))
+                                .disabled(!audioPlayer.hasPrevious(in: playbackQueue))
                                 .accessibilityLabel("上一首")
 
                                 Button(action: { togglePlayback(for: currentSong) }) {
@@ -81,7 +82,7 @@ struct NowPlayingView: View {
                                     Image(systemName: "forward.fill")
                                         .font(.title2)
                                 }
-                                .disabled(!audioPlayer.hasNext(in: songs))
+                                .disabled(!audioPlayer.hasNext(in: playbackQueue))
                                 .accessibilityLabel("下一首")
                             }
 
@@ -132,7 +133,7 @@ struct NowPlayingView: View {
             return nil
         }
 
-        return songs.first(where: { $0.id == currentSongID })
+        return librarySongs.first(where: { $0.id == currentSongID })
     }
 
     private var playbackDuration: TimeInterval {
@@ -177,13 +178,13 @@ struct NowPlayingView: View {
 
     private func playPrevious() {
         performPlaybackAction {
-            try audioPlayer.playPrevious(in: songs)
+            try audioPlayer.playPrevious(in: playbackQueue)
         }
     }
 
     private func playNext() {
         performPlaybackAction {
-            try audioPlayer.playNext(in: songs)
+            try audioPlayer.playNext(in: playbackQueue)
         }
     }
 

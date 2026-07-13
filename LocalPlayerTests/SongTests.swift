@@ -13,7 +13,8 @@ struct SongTests {
             artist: "Test Artist",
             durationSeconds: 180.0,
             artworkData: nil,
-            importedAt: Date(timeIntervalSince1970: 0)
+            importedAt: importedAt
+            #expect(song.importedAt == importedAt)
         )
 
         #expect(song.contentHash == "abc123")

@@ -17,6 +17,7 @@ targets:
     sources:
       - path: App
       - path: Models
+      - path: Services
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.mika.localplayer

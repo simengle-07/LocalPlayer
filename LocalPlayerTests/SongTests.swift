@@ -23,4 +23,22 @@ struct SongTests {
         #expect(song.durationSeconds == 180.0)
         #expect(song.artworkData == nil)
     }
+
+    @Test
+    func rejectsFilesThatAreNotMP3() async {
+        let importer = MP3ImportService()
+        let textFileURL = URL(fileURLWithPath: "/not-a-song.txt")
+
+        do {
+            _ = try await importer.importMP3(
+                from: textFileURL,
+                existingContentHashes: Set<String>()
+            )
+            Issue.record("Expected the importer to reject a non-MP3 file.")
+        } catch MP3ImportError.unsupportedFileType {
+            // Expected outcome.
+        } catch {
+            Issue.record("Expected unsupportedFileType, got \(error).")
+        }
+    }
 }

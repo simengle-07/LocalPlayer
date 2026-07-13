@@ -5,7 +5,7 @@ import SwiftData
 struct LocalPlayerApp: App {
     var body: some Scene {
         WindowGroup {
-            Text("LocalPlayer")
+            LibraryView()
         }
         .modelContainer(for: Song.self)
     }

@@ -59,56 +59,16 @@ struct BatchSongEditorView: View {
     @State private var validationMessage: String?
 
     var body: some View {
+        editorContent
+    }
+
+    private var navigationContent: some View {
         NavigationStack {
             Form {
-                Section {
-                    Label(
-                        "已选择 \(selectedSongCount) 首歌曲",
-                        systemImage: "checkmark.circle.fill"
-                    )
-                    .foregroundStyle(.secondary)
-                }
-
-                Section("分类") {
-                    Picker("分类操作", selection: $categoryAction) {
-                        ForEach(BatchCategoryAction.allCases) { action in
-                            Text(action.title).tag(action)
-                        }
-                    }
-
-                    if categoryAction == .set {
-                        categoryEditor
-                    } else if categoryAction == .clear {
-                        Text("会清除所选歌曲的一级和二级分类。")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Section("封面") {
-                    Picker("封面操作", selection: $artworkAction) {
-                        ForEach(BatchArtworkAction.allCases) { action in
-                            Text(action.title).tag(action)
-                        }
-                    }
-
-                    if artworkAction == .remove {
-                        Text("会移除所选歌曲的自定义封面。")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                if artworkAction == .replace {
-                    ArtworkEditorSection(
-                        artworkData: $artworkData,
-                        didChangeArtwork: $didChangeArtwork,
-                        errorMessage: $validationMessage,
-                        isLoadingArtwork: $isLoadingArtwork,
-                        allowsRemoval: false,
-                        footerText: "所选图片会应用到全部选中歌曲。"
-                    )
-                }
+                selectedSongsSection
+                batchCategorySection
+                batchArtworkSection
+                artworkReplacementSection
             }
             .navigationTitle("批量编辑")
             .navigationBarTitleDisplayMode(.inline)
@@ -124,39 +84,101 @@ struct BatchSongEditorView: View {
                         .disabled(!canSubmit)
                 }
             }
-            .alert(
-                "操作未完成",
-                isPresented: Binding(
-                    get: { validationMessage != nil },
-                    set: { isPresented in
-                        if !isPresented {
-                            validationMessage = nil
-                        }
+        }
+    }
+
+    private var editorContent: some View {
+        navigationContent
+        .alert(
+            "操作未完成",
+            isPresented: Binding(
+                get: { validationMessage != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        validationMessage = nil
                     }
-                )
-            ) {
-                Button("好", role: .cancel) {
-                    validationMessage = nil
                 }
-            } message: {
-                Text(validationMessage ?? "")
+            )
+        ) {
+            Button("好", role: .cancel) {
+                validationMessage = nil
             }
-            .onChange(of: effectiveCategoryName) { oldValue, newValue in
-                guard !Song.hasSameOptionalCategoryName(oldValue, newValue) else {
-                    return
-                }
+        } message: {
+            Text(validationMessage ?? "")
+        }
+        .onChange(of: effectiveCategoryName) { oldValue, newValue in
+            guard !Song.hasSameOptionalCategoryName(oldValue, newValue) else {
+                return
+            }
 
-                selectedSubcategoryName = nil
-                newSubcategoryName = ""
+            selectedSubcategoryName = nil
+            newSubcategoryName = ""
+        }
+        .onChange(of: artworkAction) { _, newValue in
+            guard newValue != .replace else {
+                return
             }
-            .onChange(of: artworkAction) { _, newValue in
-                guard newValue != .replace else {
-                    return
-                }
 
-                artworkData = nil
-                didChangeArtwork = false
+            artworkData = nil
+            didChangeArtwork = false
+        }
+    }
+
+    private var selectedSongsSection: some View {
+        Section {
+            Label(
+                "已选择 \(selectedSongCount) 首歌曲",
+                systemImage: "checkmark.circle.fill"
+            )
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    private var batchCategorySection: some View {
+        Section("分类") {
+            Picker("分类操作", selection: $categoryAction) {
+                ForEach(BatchCategoryAction.allCases) { action in
+                    Text(action.title).tag(action)
+                }
             }
+
+            if categoryAction == .set {
+                categoryEditor
+            } else if categoryAction == .clear {
+                Text("会清除所选歌曲的一级和二级分类。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var batchArtworkSection: some View {
+        Section("封面") {
+            Picker("封面操作", selection: $artworkAction) {
+                ForEach(BatchArtworkAction.allCases) { action in
+                    Text(action.title).tag(action)
+                }
+            }
+
+            if artworkAction == .remove {
+                Text("会移除所选歌曲的自定义封面。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var artworkReplacementSection: some View {
+        if artworkAction == .replace {
+            ArtworkEditorSection(
+                artworkData: $artworkData,
+                didChangeArtwork: $didChangeArtwork,
+                errorMessage: $validationMessage,
+                isLoadingArtwork: $isLoadingArtwork,
+                allowsRemoval: false,
+                footerText: "所选图片会应用到全部选中歌曲。"
+            )
         }
     }
 

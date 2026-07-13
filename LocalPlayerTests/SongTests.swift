@@ -579,6 +579,32 @@ struct SongTests {
     }
 
     @Test
+    func reportsNextCommandAvailabilityForEachPlaybackMode() {
+        let first = Self.makeSong(title: "First")
+        let second = Self.makeSong(title: "Second")
+
+        let repeatAllAvailability = AudioPlayerService.trackCommandAvailability(
+            in: [first, second],
+            relativeTo: second.id,
+            mode: .repeatAll
+        )
+        let repeatOneAvailability = AudioPlayerService.trackCommandAvailability(
+            in: [first, second],
+            relativeTo: second.id,
+            mode: .repeatOne
+        )
+        let singleShuffleAvailability = AudioPlayerService.trackCommandAvailability(
+            in: [first],
+            relativeTo: first.id,
+            mode: .shuffle
+        )
+
+        #expect(repeatAllAvailability.next)
+        #expect(!repeatOneAvailability.next)
+        #expect(!singleShuffleAvailability.next)
+    }
+
+    @Test
     func mapsCurrentSongToNowPlayingMetadata() async {
         await MainActor.run {
             let song = Self.makeSong(title: "Now Playing")

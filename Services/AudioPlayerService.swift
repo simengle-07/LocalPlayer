@@ -153,11 +153,17 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
     }
 
     func playNext(in songs: [Song]) throws {
-        guard let nextSong = Self.adjacentSong(
+        guard let nextSong = Self.nextSong(
             in: songs,
             relativeTo: currentSongID,
-            offset: 1
+            mode: playbackMode,
+            reason: .manual
         ) else {
+            return
+        }
+
+        if nextSong.id == currentSongID {
+            try startPlayback(of: nextSong)
             return
         }
 
@@ -165,11 +171,11 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
     }
 
     func hasNext(in songs: [Song]) -> Bool {
-        Self.adjacentSong(
+        Self.hasNextSong(
             in: songs,
             relativeTo: currentSongID,
-            offset: 1
-        ) != nil
+            mode: playbackMode
+        )
     }
 
     static func adjacentSong(
@@ -270,7 +276,8 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
 
     static func trackCommandAvailability(
         in songs: [Song],
-        relativeTo currentSongID: UUID?
+        relativeTo currentSongID: UUID?,
+        mode: PlaybackMode = .sequential
     ) -> (previous: Bool, next: Bool) {
         (
             previous: adjacentSong(
@@ -278,12 +285,32 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
                 relativeTo: currentSongID,
                 offset: -1
             ) != nil,
-            next: adjacentSong(
+            next: hasNextSong(
                 in: songs,
                 relativeTo: currentSongID,
-                offset: 1
-            ) != nil
+                mode: mode
+            )
         )
+    }
+
+    static func hasNextSong(
+        in songs: [Song],
+        relativeTo currentSongID: UUID?,
+        mode: PlaybackMode
+    ) -> Bool {
+        guard let currentSongID,
+              let currentIndex = songs.firstIndex(where: { $0.id == currentSongID }) else {
+            return false
+        }
+
+        switch mode {
+        case .sequential, .repeatOne:
+            return songs.indices.contains(currentIndex + 1)
+        case .shuffle:
+            return songs.count > 1
+        case .repeatAll:
+            return !songs.isEmpty
+        }
     }
 
     private func startPlayback(of song: Song) throws {
@@ -367,7 +394,8 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
         if let nextSong = Self.songForAutomaticContinuation(
             in: playbackQueue,
             after: currentSongID,
-            finishedSuccessfully: flag
+            finishedSuccessfully: flag,
+            mode: playbackMode
         ) {
             do {
                 try startPlayback(of: nextSong)
@@ -591,16 +619,21 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
             return .noActionableNowPlayingItem
         }
 
-        guard let nextSong = Self.adjacentSong(
+        guard let nextSong = Self.nextSong(
             in: playbackQueue,
             relativeTo: currentSongID,
-            offset: 1
+            mode: playbackMode,
+            reason: .manual
         ) else {
             return .noSuchContent
         }
 
         do {
-            try play(nextSong)
+            if nextSong.id == currentSongID {
+                try startPlayback(of: nextSong)
+            } else {
+                try play(nextSong)
+            }
             return .success
         } catch {
             return .commandFailed
@@ -614,7 +647,8 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
 
         let availability = Self.trackCommandAvailability(
             in: playbackQueue,
-            relativeTo: currentSongID
+            relativeTo: currentSongID,
+            mode: playbackMode
         )
         let commandCenter = MPRemoteCommandCenter.shared()
         commandCenter.previousTrackCommand.isEnabled = availability.previous

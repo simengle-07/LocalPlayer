@@ -89,6 +89,15 @@ struct LibraryView: View {
                 }
             }
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if let currentSong {
+                MiniPlayerBar(
+                    song: currentSong,
+                    songs: songs,
+                    operationErrorMessage: $operationErrorMessage
+                )
+            }
+        }
         .fileImporter(
             isPresented: $isShowingImporter,
             allowedContentTypes: [.mp3],
@@ -199,13 +208,21 @@ struct LibraryView: View {
         }
     }
 
+    private var currentSong: Song? {
+        guard let currentSongID = audioPlayer.currentSongID else {
+            return nil
+        }
+
+        return songs.first(where: { $0.id == currentSongID })
+    }
+
     private func formattedDuration(_ duration: Double) -> String {
         let totalSeconds = Int(duration.rounded())
         return String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
     }
 }
 
-private struct ArtworkThumbnail: View {
+struct ArtworkThumbnail: View {
     let artworkData: Data?
 
     var body: some View {

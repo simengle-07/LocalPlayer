@@ -92,6 +92,14 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
         try play(previousSong)
     }
 
+    func hasPrevious(in songs: [Song]) -> Bool {
+        Self.adjacentSong(
+            in: songs,
+            relativeTo: currentSongID,
+            offset: -1
+        ) != nil
+    }
+
     func playNext(in songs: [Song]) throws {
         guard let nextSong = Self.adjacentSong(
             in: songs,
@@ -102,6 +110,14 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
         }
 
         try play(nextSong)
+    }
+
+    func hasNext(in songs: [Song]) -> Bool {
+        Self.adjacentSong(
+            in: songs,
+            relativeTo: currentSongID,
+            offset: 1
+        ) != nil
     }
 
     static func adjacentSong(

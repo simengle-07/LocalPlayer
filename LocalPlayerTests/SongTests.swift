@@ -88,6 +88,76 @@ struct SongTests {
     }
 
     @Test
+    func movesSongsIntoCanonicalTwoLevelCategories() {
+        let song = Self.makeSong(title: "First")
+        let existingSong = Self.makeSong(title: "Existing")
+        existingSong.categoryName = "日语音乐"
+        existingSong.subcategoryName = "动画歌曲"
+
+        song.move(
+            toCategory: "  日语音乐  ",
+            subcategory: "  动画歌曲  ",
+            existingCategoryPaths: Song.categoryPaths(in: [existingSong])
+        )
+
+        #expect(song.categoryName == "日语音乐")
+        #expect(song.subcategoryName == "动画歌曲")
+    }
+
+    @Test
+    func deletesSubcategoryBackToItsParentWithoutAffectingOtherPaths() {
+        let animeSong = Self.makeSong(title: "Anime")
+        animeSong.categoryName = "日语音乐"
+        animeSong.subcategoryName = "动画歌曲"
+        let gameSong = Self.makeSong(title: "Game")
+        gameSong.categoryName = "日语音乐"
+        gameSong.subcategoryName = "游戏原声"
+
+        #expect(
+            Song.removeSubcategory(
+                named: "动画歌曲",
+                fromCategory: "日语音乐",
+                in: [animeSong, gameSong]
+            )
+        )
+        #expect(animeSong.categoryName == "日语音乐")
+        #expect(animeSong.subcategoryName == nil)
+        #expect(gameSong.subcategoryName == "游戏原声")
+    }
+
+    @Test
+    func removesChildrenWhenRemovingTheirParentCategory() {
+        let song = Self.makeSong(title: "Anime")
+        song.categoryName = "日语音乐"
+        song.subcategoryName = "动画歌曲"
+
+        #expect(Song.removeCategory(named: "日语音乐", from: [song]))
+        #expect(song.categoryName == nil)
+        #expect(song.subcategoryName == nil)
+    }
+
+    @Test
+    func renamesSubcategoryOnlyWithinItsParentCategory() {
+        let japaneseSong = Self.makeSong(title: "Japanese")
+        japaneseSong.categoryName = "日语音乐"
+        japaneseSong.subcategoryName = "原声"
+        let gameSong = Self.makeSong(title: "Game")
+        gameSong.categoryName = "游戏音乐"
+        gameSong.subcategoryName = "原声"
+
+        let renamedSubcategory = Song.renameSubcategory(
+            named: "原声",
+            fromCategory: "日语音乐",
+            to: "动画原声",
+            in: [japaneseSong, gameSong]
+        )
+
+        #expect(renamedSubcategory == "动画原声")
+        #expect(japaneseSong.subcategoryName == "动画原声")
+        #expect(gameSong.subcategoryName == "原声")
+    }
+
+    @Test
     func replacesAndRemovesArtworkWithoutAcceptingInvalidImageData() {
         let song = Self.makeSong(title: "Artwork")
         let validArtworkData = Self.makeArtworkData()

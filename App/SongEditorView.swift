@@ -10,13 +10,16 @@ enum SongArtworkChange {
 struct SongEditorView: View {
     let song: Song
     let categoryNames: [String]
-    let onSave: (String, String?, SongArtworkChange) -> Bool
+    let categoryPaths: [SongCategoryPath]
+    let onSave: (String, String?, String?, SongArtworkChange) -> Bool
 
     @Environment(\.dismiss) private var dismiss
 
     @State private var title: String
     @State private var selectedCategoryName: String?
     @State private var newCategoryName = ""
+    @State private var selectedSubcategoryName: String?
+    @State private var newSubcategoryName = ""
     @State private var artworkData: Data?
     @State private var didChangeArtwork = false
     @State private var isLoadingArtwork = false
@@ -25,13 +28,16 @@ struct SongEditorView: View {
     init(
         song: Song,
         categoryNames: [String],
-        onSave: @escaping (String, String?, SongArtworkChange) -> Bool
+        categoryPaths: [SongCategoryPath],
+        onSave: @escaping (String, String?, String?, SongArtworkChange) -> Bool
     ) {
         self.song = song
         self.categoryNames = categoryNames
+        self.categoryPaths = categoryPaths
         self.onSave = onSave
         _title = State(initialValue: song.title)
         _selectedCategoryName = State(initialValue: song.categoryName)
+        _selectedSubcategoryName = State(initialValue: song.subcategoryName)
         _artworkData = State(initialValue: song.artworkData)
     }
 
@@ -44,7 +50,7 @@ struct SongEditorView: View {
                 }
 
                 Section("分类") {
-                    Picker("现有分类", selection: $selectedCategoryName) {
+                    Picker("一级分类", selection: $selectedCategoryName) {
                         Text("未分类")
                             .tag(String?.none)
 
@@ -54,12 +60,39 @@ struct SongEditorView: View {
                         }
                     }
 
-                    TextField("或输入新分类", text: $newCategoryName)
+                    TextField("或输入新一级分类", text: $newCategoryName)
                         .textInputAutocapitalization(.words)
 
-                    Text("填写新分类时，会优先使用它。")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    if let effectiveCategoryName {
+                        Picker("二级分类", selection: $selectedSubcategoryName) {
+                            Text("仅一级分类")
+                                .tag(String?.none)
+
+                            ForEach(subcategoryNames, id: \.self) { subcategoryName in
+                                Text(subcategoryName)
+                                    .tag(subcategoryName as String?)
+                            }
+                        }
+
+                        TextField("或输入新二级分类", text: $newSubcategoryName)
+                            .textInputAutocapitalization(.words)
+
+                        Text("当前一级分类：\(effectiveCategoryName)")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("先选择或输入一级分类，才能设置二级分类。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .onChange(of: effectiveCategoryName) { oldValue, newValue in
+                    guard !Song.hasSameOptionalCategoryName(oldValue, newValue) else {
+                        return
+                    }
+
+                    selectedSubcategoryName = nil
+                    newSubcategoryName = ""
                 }
 
                 ArtworkEditorSection(
@@ -103,14 +136,27 @@ struct SongEditorView: View {
         }
     }
 
+    private var effectiveCategoryName: String? {
+        Song.normalizedCategoryName(from: newCategoryName) ?? selectedCategoryName
+    }
+
+    private var subcategoryNames: [String] {
+        Song.subcategoryNames(
+            for: effectiveCategoryName,
+            in: categoryPaths
+        )
+    }
+
     private func save() {
         guard Song.normalizedTitle(from: title) != nil else {
             validationMessage = "歌曲名称不能为空。"
             return
         }
 
-        let requestedCategoryName = Song.normalizedCategoryName(from: newCategoryName)
-            ?? selectedCategoryName
+        let requestedSubcategoryName = effectiveCategoryName.flatMap { _ in
+            Song.normalizedCategoryName(from: newSubcategoryName)
+                ?? selectedSubcategoryName
+        }
         let artworkChange: SongArtworkChange
 
         if didChangeArtwork {
@@ -123,7 +169,12 @@ struct SongEditorView: View {
             artworkChange = .unchanged
         }
 
-        if onSave(title, requestedCategoryName, artworkChange) {
+        if onSave(
+            title,
+            effectiveCategoryName,
+            requestedSubcategoryName,
+            artworkChange
+        ) {
             dismiss()
         }
     }

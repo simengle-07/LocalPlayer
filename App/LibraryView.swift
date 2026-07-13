@@ -8,6 +8,7 @@ private enum LibraryCategoryFilter: Hashable {
     case all
     case uncategorized
     case category(String)
+    case subcategory(SongCategoryPath)
 
     var displayName: String {
         switch self {
@@ -17,6 +18,8 @@ private enum LibraryCategoryFilter: Hashable {
             return "未分类"
         case .category(let categoryName):
             return categoryName
+        case .subcategory(let path):
+            return path.displayName
         }
     }
 }
@@ -37,6 +40,8 @@ struct LibraryView: View {
     @State private var categoryNameBeingRenamed: String?
     @State private var renamedCategoryName = ""
     @State private var categoryNamePendingDeletion: String?
+    @State private var subcategoryPathBeingRenamed: SongCategoryPath?
+    @State private var subcategoryPathPendingDeletion: SongCategoryPath?
     @State private var operationErrorMessage: String?
 
     private let importer = MP3ImportService()
@@ -126,11 +131,13 @@ struct LibraryView: View {
                 SongEditorView(
                     song: songBeingEdited,
                     categoryNames: categoryNames,
-                    onSave: { title, categoryName, artworkChange in
+                    categoryPaths: categoryPaths,
+                    onSave: { title, categoryName, subcategoryName, artworkChange in
                         saveSongEdits(
                             for: songBeingEdited,
                             title: title,
                             categoryName: categoryName,
+                            subcategoryName: subcategoryName,
                             artworkChange: artworkChange
                         )
                     }
@@ -191,6 +198,47 @@ struct LibraryView: View {
             Text("删除“\(categoryNamePendingDeletion ?? "")”后，其中的歌曲会变为未分类。")
         }
         .alert(
+            "重命名二级分类",
+            isPresented: Binding(
+                get: { subcategoryPathBeingRenamed != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        subcategoryPathBeingRenamed = nil
+                    }
+                }
+            )
+        ) {
+            TextField("二级分类名称", text: $renamedCategoryName)
+
+            Button("保存") {
+                renameSubcategory()
+            }
+
+            Button("取消", role: .cancel) {
+                subcategoryPathBeingRenamed = nil
+            }
+        }
+        .confirmationDialog(
+            "删除二级分类",
+            isPresented: Binding(
+                get: { subcategoryPathPendingDeletion != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        subcategoryPathPendingDeletion = nil
+                    }
+                }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("删除并移回一级分类", role: .destructive) {
+                deleteSubcategory()
+            }
+        } message: {
+            Text(
+                "删除“\(subcategoryPathPendingDeletion?.displayName ?? "")”后，其中的歌曲会保留在一级分类。"
+            )
+        }
+        .alert(
             "操作未完成",
             isPresented: Binding(
                 get: { operationErrorMessage != nil },
@@ -216,30 +264,47 @@ struct LibraryView: View {
         .onChange(of: filteredSongs.map(\.id)) { _, _ in
             synchronizePlaybackQueue()
         }
-        .onChange(of: categoryNames) { _, updatedCategoryNames in
-            guard case .category(let selectedCategoryName) = selectedCategoryFilter,
-                  !updatedCategoryNames.contains(where: {
-                      Song.hasSameCategoryName($0, selectedCategoryName)
-                  }) else {
-                return
-            }
-
-            selectedCategoryFilter = .all
+        .onChange(of: categoryPaths) { _, _ in
+            synchronizeSelectedCategoryFilter()
         }
     }
 
     private var categoryFilterMenu: some View {
         Menu {
-            Picker("显示", selection: $selectedCategoryFilter) {
+            Button {
+                selectedCategoryFilter = .all
+            } label: {
                 Label("全部音乐", systemImage: "music.note.list")
-                    .tag(LibraryCategoryFilter.all)
+            }
 
+            Button {
+                selectedCategoryFilter = .uncategorized
+            } label: {
                 Label("未分类", systemImage: "tray")
-                    .tag(LibraryCategoryFilter.uncategorized)
+            }
 
-                ForEach(categoryNames, id: \.self) { categoryName in
-                    Text(categoryName)
-                        .tag(LibraryCategoryFilter.category(categoryName))
+            ForEach(categoryNames, id: \.self) { categoryName in
+                Menu(categoryName) {
+                    Button("全部 \(categoryName)") {
+                        selectedCategoryFilter = .category(categoryName)
+                    }
+
+                    let subcategoryNames = subcategoryNames(for: categoryName)
+
+                    if !subcategoryNames.isEmpty {
+                        Divider()
+
+                        ForEach(subcategoryNames, id: \.self) { subcategoryName in
+                            Button(subcategoryName) {
+                                selectedCategoryFilter = .subcategory(
+                                    SongCategoryPath(
+                                        categoryName: categoryName,
+                                        subcategoryName: subcategoryName
+                                    )
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -256,6 +321,35 @@ struct LibraryView: View {
 
                             Button("删除", systemImage: "trash", role: .destructive) {
                                 categoryNamePendingDeletion = categoryName
+                            }
+
+                            let subcategoryNames = subcategoryNames(for: categoryName)
+
+                            if !subcategoryNames.isEmpty {
+                                Divider()
+
+                                ForEach(subcategoryNames, id: \.self) { subcategoryName in
+                                    Menu(subcategoryName) {
+                                        Button("重命名", systemImage: "pencil") {
+                                            subcategoryPathBeingRenamed = SongCategoryPath(
+                                                categoryName: categoryName,
+                                                subcategoryName: subcategoryName
+                                            )
+                                            renamedCategoryName = subcategoryName
+                                        }
+
+                                        Button(
+                                            "删除",
+                                            systemImage: "trash",
+                                            role: .destructive
+                                        ) {
+                                            subcategoryPathPendingDeletion = SongCategoryPath(
+                                                categoryName: categoryName,
+                                                subcategoryName: subcategoryName
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -321,12 +415,34 @@ struct LibraryView: View {
 
                 Menu("移动到分类") {
                     Button("未分类", systemImage: "tray") {
-                        moveSong(song, toCategory: nil)
+                        moveSong(song, toCategory: nil, subcategoryName: nil)
                     }
 
                     ForEach(categoryNames, id: \.self) { categoryName in
-                        Button(categoryName) {
-                            moveSong(song, toCategory: categoryName)
+                        Menu(categoryName) {
+                            Button("仅 \(categoryName)") {
+                                moveSong(
+                                    song,
+                                    toCategory: categoryName,
+                                    subcategoryName: nil
+                                )
+                            }
+
+                            let subcategoryNames = subcategoryNames(for: categoryName)
+
+                            if !subcategoryNames.isEmpty {
+                                Divider()
+
+                                ForEach(subcategoryNames, id: \.self) { subcategoryName in
+                                    Button(subcategoryName) {
+                                        moveSong(
+                                            song,
+                                            toCategory: categoryName,
+                                            subcategoryName: subcategoryName
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -393,10 +509,12 @@ struct LibraryView: View {
         for song: Song,
         title: String,
         categoryName: String?,
+        subcategoryName: String?,
         artworkChange: SongArtworkChange
     ) -> Bool {
         let originalTitle = song.title
         let originalCategoryName = song.categoryName
+        let originalSubcategoryName = song.subcategoryName
         let originalArtworkData = song.artworkData
 
         guard song.rename(to: title) else {
@@ -406,7 +524,8 @@ struct LibraryView: View {
 
         song.move(
             toCategory: categoryName,
-            existingCategoryNames: categoryNames
+            subcategory: subcategoryName,
+            existingCategoryPaths: categoryPaths
         )
 
         switch artworkChange {
@@ -416,6 +535,7 @@ struct LibraryView: View {
             guard song.replaceArtwork(with: artworkData) else {
                 song.title = originalTitle
                 song.categoryName = originalCategoryName
+                song.subcategoryName = originalSubcategoryName
                 operationErrorMessage = "所选封面不是可用的图片。"
                 return false
             }
@@ -426,6 +546,7 @@ struct LibraryView: View {
         guard saveModelChanges(withFailureMessage: "保存歌曲编辑失败") else {
             song.title = originalTitle
             song.categoryName = originalCategoryName
+            song.subcategoryName = originalSubcategoryName
             song.artworkData = originalArtworkData
             return false
         }
@@ -433,16 +554,23 @@ struct LibraryView: View {
         return true
     }
 
-    private func moveSong(_ song: Song, toCategory categoryName: String?) {
+    private func moveSong(
+        _ song: Song,
+        toCategory categoryName: String?,
+        subcategoryName: String?
+    ) {
         let originalCategoryName = song.categoryName
+        let originalSubcategoryName = song.subcategoryName
 
         song.move(
             toCategory: categoryName,
-            existingCategoryNames: categoryNames
+            subcategory: subcategoryName,
+            existingCategoryPaths: categoryPaths
         )
 
         guard saveModelChanges(withFailureMessage: "移动歌曲分类失败") else {
             song.categoryName = originalCategoryName
+            song.subcategoryName = originalSubcategoryName
             return
         }
     }
@@ -452,7 +580,13 @@ struct LibraryView: View {
             return
         }
 
-        let originalCategories = songs.map { (song: $0, categoryName: $0.categoryName) }
+        let originalCategories = songs.map {
+            (
+                song: $0,
+                categoryName: $0.categoryName,
+                subcategoryName: $0.subcategoryName
+            )
+        }
 
         guard let resolvedCategoryName = Song.renameCategory(
             named: categoryNameBeingRenamed,
@@ -468,9 +602,24 @@ struct LibraryView: View {
             return
         }
 
-        if case .category(let selectedCategoryName) = selectedCategoryFilter,
-           Song.hasSameCategoryName(selectedCategoryName, categoryNameBeingRenamed) {
+        switch selectedCategoryFilter {
+        case .category(let selectedCategoryName) where Song.hasSameCategoryName(
+            selectedCategoryName,
+            categoryNameBeingRenamed
+        ):
             selectedCategoryFilter = .category(resolvedCategoryName)
+        case .subcategory(let path) where Song.hasSameCategoryName(
+            path.categoryName,
+            categoryNameBeingRenamed
+        ):
+            selectedCategoryFilter = .subcategory(
+                SongCategoryPath(
+                    categoryName: resolvedCategoryName,
+                    subcategoryName: path.subcategoryName
+                )
+            )
+        default:
+            break
         }
 
         self.categoryNameBeingRenamed = nil
@@ -481,7 +630,13 @@ struct LibraryView: View {
             return
         }
 
-        let originalCategories = songs.map { (song: $0, categoryName: $0.categoryName) }
+        let originalCategories = songs.map {
+            (
+                song: $0,
+                categoryName: $0.categoryName,
+                subcategoryName: $0.subcategoryName
+            )
+        }
 
         guard Song.removeCategory(named: categoryNamePendingDeletion, from: songs) else {
             return
@@ -492,12 +647,107 @@ struct LibraryView: View {
             return
         }
 
-        if case .category(let selectedCategoryName) = selectedCategoryFilter,
-           Song.hasSameCategoryName(selectedCategoryName, categoryNamePendingDeletion) {
+        switch selectedCategoryFilter {
+        case .category(let selectedCategoryName) where Song.hasSameCategoryName(
+            selectedCategoryName,
+            categoryNamePendingDeletion
+        ):
             selectedCategoryFilter = .uncategorized
+        case .subcategory(let path) where Song.hasSameCategoryName(
+            path.categoryName,
+            categoryNamePendingDeletion
+        ):
+            selectedCategoryFilter = .uncategorized
+        default:
+            break
         }
 
         self.categoryNamePendingDeletion = nil
+    }
+
+    private func renameSubcategory() {
+        guard let path = subcategoryPathBeingRenamed,
+              let subcategoryName = path.subcategoryName else {
+            return
+        }
+
+        let originalCategories = songs.map {
+            (
+                song: $0,
+                categoryName: $0.categoryName,
+                subcategoryName: $0.subcategoryName
+            )
+        }
+        guard let resolvedSubcategoryName = Song.renameSubcategory(
+            named: subcategoryName,
+            fromCategory: path.categoryName,
+            to: renamedCategoryName,
+            in: songs
+        ) else {
+            operationErrorMessage = "二级分类名称不能为空。"
+            return
+        }
+
+        guard saveModelChanges(withFailureMessage: "重命名二级分类失败") else {
+            restoreCategories(originalCategories)
+            return
+        }
+
+        if case .subcategory(let selectedPath) = selectedCategoryFilter,
+           Song.hasSameCategoryPath(
+               categoryName: selectedPath.categoryName,
+               subcategoryName: selectedPath.subcategoryName,
+               path.categoryName,
+               subcategoryName
+           ) {
+            selectedCategoryFilter = .subcategory(
+                SongCategoryPath(
+                    categoryName: path.categoryName,
+                    subcategoryName: resolvedSubcategoryName
+                )
+            )
+        }
+
+        subcategoryPathBeingRenamed = nil
+    }
+
+    private func deleteSubcategory() {
+        guard let path = subcategoryPathPendingDeletion,
+              let subcategoryName = path.subcategoryName else {
+            return
+        }
+
+        let originalCategories = songs.map {
+            (
+                song: $0,
+                categoryName: $0.categoryName,
+                subcategoryName: $0.subcategoryName
+            )
+        }
+        guard Song.removeSubcategory(
+            named: subcategoryName,
+            fromCategory: path.categoryName,
+            in: songs
+        ) else {
+            return
+        }
+
+        guard saveModelChanges(withFailureMessage: "删除二级分类失败") else {
+            restoreCategories(originalCategories)
+            return
+        }
+
+        if case .subcategory(let selectedPath) = selectedCategoryFilter,
+           Song.hasSameCategoryPath(
+               categoryName: selectedPath.categoryName,
+               subcategoryName: selectedPath.subcategoryName,
+               path.categoryName,
+               subcategoryName
+           ) {
+            selectedCategoryFilter = .category(path.categoryName)
+        }
+
+        subcategoryPathPendingDeletion = nil
     }
 
     private func deleteSong(_ song: Song) {
@@ -559,9 +809,14 @@ struct LibraryView: View {
         }
     }
 
-    private func restoreCategories(_ categories: [(song: Song, categoryName: String?)]) {
+    private func restoreCategories(
+        _ categories: [
+            (song: Song, categoryName: String?, subcategoryName: String?)
+        ]
+    ) {
         for category in categories {
             category.song.categoryName = category.categoryName
+            category.song.subcategoryName = category.subcategoryName
         }
     }
 
@@ -571,6 +826,47 @@ struct LibraryView: View {
 
     private var categoryNames: [String] {
         Song.categoryNames(in: songs)
+    }
+
+    private var categoryPaths: [SongCategoryPath] {
+        Song.categoryPaths(in: songs)
+    }
+
+    private func subcategoryNames(for categoryName: String) -> [String] {
+        Song.subcategoryNames(for: categoryName, in: categoryPaths)
+    }
+
+    private func synchronizeSelectedCategoryFilter() {
+        switch selectedCategoryFilter {
+        case .all, .uncategorized:
+            return
+        case .category(let categoryName):
+            guard categoryNames.contains(where: {
+                Song.hasSameCategoryName($0, categoryName)
+            }) else {
+                selectedCategoryFilter = .all
+                return
+            }
+        case .subcategory(let path):
+            guard categoryNames.contains(where: {
+                Song.hasSameCategoryName($0, path.categoryName)
+            }) else {
+                selectedCategoryFilter = .all
+                return
+            }
+
+            guard categoryPaths.contains(where: {
+                Song.hasSameCategoryPath(
+                    categoryName: $0.categoryName,
+                    subcategoryName: $0.subcategoryName,
+                    path.categoryName,
+                    path.subcategoryName ?? ""
+                )
+            }) else {
+                selectedCategoryFilter = .category(path.categoryName)
+                return
+            }
+        }
     }
 
     private var filteredSongs: [Song] {
@@ -584,6 +880,19 @@ struct LibraryView: View {
         case .category(let categoryName):
             return songs.filter {
                 Song.hasSameCategoryName($0.categoryName, categoryName)
+            }
+        case .subcategory(let path):
+            guard let subcategoryName = path.subcategoryName else {
+                return []
+            }
+
+            return songs.filter {
+                Song.hasSameCategoryPath(
+                    categoryName: $0.categoryName,
+                    subcategoryName: $0.subcategoryName,
+                    path.categoryName,
+                    subcategoryName
+                )
             }
         }
     }

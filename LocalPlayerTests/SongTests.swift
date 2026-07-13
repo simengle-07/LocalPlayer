@@ -289,6 +289,37 @@ struct SongTests {
     }
 
     @Test
+    func continuesToTheNextQueuedSongOnlyAfterSuccessfulCompletion() async {
+        await MainActor.run {
+            let first = Self.makeSong(title: "First")
+            let second = Self.makeSong(title: "Second")
+            let songs = [first, second]
+
+            #expect(
+                AudioPlayerService.songForAutomaticContinuation(
+                    in: songs,
+                    after: first.id,
+                    finishedSuccessfully: true
+                )?.id == second.id
+            )
+            #expect(
+                AudioPlayerService.songForAutomaticContinuation(
+                    in: songs,
+                    after: second.id,
+                    finishedSuccessfully: true
+                ) == nil
+            )
+            #expect(
+                AudioPlayerService.songForAutomaticContinuation(
+                    in: songs,
+                    after: first.id,
+                    finishedSuccessfully: false
+                ) == nil
+            )
+        }
+    }
+
+    @Test
     func reportsTrackCommandAvailabilityFromThePlaybackQueue() async {
         await MainActor.run {
             let first = Self.makeSong(title: "First")

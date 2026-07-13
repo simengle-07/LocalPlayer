@@ -137,6 +137,22 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
         return songs[targetIndex]
     }
 
+    static func songForAutomaticContinuation(
+        in songs: [Song],
+        after currentSongID: UUID?,
+        finishedSuccessfully: Bool
+    ) -> Song? {
+        guard finishedSuccessfully else {
+            return nil
+        }
+
+        return adjacentSong(
+            in: songs,
+            relativeTo: currentSongID,
+            offset: 1
+        )
+    }
+
     static func trackCommandAvailability(
         in songs: [Song],
         relativeTo currentSongID: UUID?
@@ -227,6 +243,19 @@ final class AudioPlayerService: NSObject, ObservableObject, AVAudioPlayerDelegat
     ) {
         guard player === audioPlayer else {
             return
+        }
+
+        if let nextSong = Self.songForAutomaticContinuation(
+            in: playbackQueue,
+            after: currentSongID,
+            finishedSuccessfully: flag
+        ) {
+            do {
+                try startPlayback(of: nextSong)
+                return
+            } catch {
+                // Fall through to the completed state if the next local file is unavailable.
+            }
         }
 
         player.currentTime = 0
